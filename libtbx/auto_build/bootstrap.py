@@ -783,8 +783,8 @@ class libsvm_module(SourceModule):
 class cctbx_module(SourceModule):
   module = 'cctbx_project'
   anonymous = ['git',
-               'git@github.com:cctbx/cctbx_project.git',
-               'https://github.com/cctbx/cctbx_project.git',
+               'git@github.com:asmit3/cctbx_project.git',
+               'https://asmit3@github.com/asmit3/cctbx_project.git',
                'https://github.com/cctbx/cctbx_project/archive/master.zip']
 
 class qrefine_module(SourceModule):
