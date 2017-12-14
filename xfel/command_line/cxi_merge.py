@@ -35,12 +35,6 @@ data = None
   .multiple = True
   .help = Directory containing integrated data in pickle format.  Repeat to \
     specify additional directories.
-targlob = None
-  .type = str
-  .help = new feature, instead of data records giving directories containing integration pickles
-  .help = give a single blob giving the paths of tar files where the pickles are packaged up.
-  .help = This reduces the number of files to be read in.  But as currently implemented
-  .help = it does not reduce the number of file opens.
 predictions_to_edge {
   apply = False
     .type = bool
@@ -54,9 +48,6 @@ predictions_to_edge {
     .type = path
     .help = Path to the detector version phil file used to generate the selected data.
 }
-short_circuit = False
-  .type = bool
-  .help = Assess per-image resolution limits and exit early.
 a_list = None
   .type = path
   .multiple = False # for now XXX possibly make it multiple later
@@ -161,16 +152,9 @@ raw_data {
   errors_from_sample_residuals = False
     .type = bool
     .help = Use sample residuals as error estimates. Not compatible with sdfac_auto or sdfac_refine.
-  error_models {
-    sdfac_refine {
-      random_seed = None
-        .help = Random seed. May be int or None.
-        .type = int
-        .expert_level = 1
-      target_function = *original squared
-        .type = choice
-    }
-  }
+  errors_from_mcmc = False
+    .type = bool
+    .help = Use Markov Chain Monte Carlo as a way of estimating the error using the 'Ideal Crystal' approach (Neutze 2017)
 }
 output {
   n_bins = 10
@@ -334,14 +318,6 @@ levmar {
     .type = choice
     .multiple = True
 }
-cell_rejection {
-  unit_cell = Auto
-    .type = unit_cell
-    .help = unit_cell for filtering crystals with the given unit cell params. If Auto will automatically choose PDB model unit cell.
-  space_group = Auto
-    .type = space_group
-    .help = space_group for filtering crystals with the given space group params. If Auto will automatically choose PDB space group.
-}
 """ + mysql_master_phil
 
 def get_observations (work_params):
@@ -360,58 +336,46 @@ def get_observations (work_params):
     permissible_file_hash = dict( zip(permissible_file_names, [None]*len(permissible_file_names)) )
     n_sorry = 0
   file_names = []
-  if work_params.targlob is not None:
-    tar_list = glob.glob(work_params.targlob)
-    for tarname in tar_list:
-      import tarfile
-      T = tarfile.open(name=tarname, mode='r')
-      K = T.getmembers()
-      NT = len(K)
-      for nt in xrange(NT):
-        k = os.path.basename(K[nt].path)
-        file_names.append("%s;member%05d;timestamp%s"%(tarname,nt,k))
-      print tarname,NT
-  else:
-    for dir_name in data_dirs :
-      if not os.path.isdir(dir_name):
-        if os.path.isfile(dir_name):
-          #check if list-of-pickles text file is given
-          pickle_list_file = open(dir_name,'r')
-          pickle_list = pickle_list_file.read().split("\n")
-        else:
-          pickle_list = glob.glob(dir_name)
-        for pickle_filename in pickle_list:
-          if work_params.a_list is not None and pickle_filename not in permissible_file_hash:
-            # use A_list mechanism to reject files not on the "acceptable" list
-            #print "SORRY--%s FILE NOT ON THE A-List"%(pickle_filename)
-            n_sorry+=1
-            continue
-          if os.path.isfile(pickle_filename) and pickle_filename.endswith("."+extension):
-            if data_subset==0 or \
-              (data_subset==1 and (int(os.path.basename(pickle_filename).split("."+extension)[0][-1])%2==1)) or \
-              (data_subset==2 and (int(os.path.basename(pickle_filename).split("."+extension)[0][-1])%2==0)):
-              file_names.append(pickle_filename)
-        continue
-      for file_name in os.listdir(dir_name):
-        if work_params.a_list is not None and os.path.join(dir_name, file_name) not in permissible_file_hash:
+  for dir_name in data_dirs :
+    if not os.path.isdir(dir_name):
+      if os.path.isfile(dir_name):
+        #check if list-of-pickles text file is given
+        pickle_list_file = open(dir_name,'r')
+        pickle_list = pickle_list_file.read().split("\n")
+      else:
+        pickle_list = glob.glob(dir_name)
+      for pickle_filename in pickle_list:
+        if work_params.a_list is not None and pickle_filename not in permissible_file_hash:
           # use A_list mechanism to reject files not on the "acceptable" list
-          print "SORRY--%s FILE NOT ON THE A-List"%(os.path.join(dir_name, file_name))
+          #print "SORRY--%s FILE NOT ON THE A-List"%(pickle_filename)
           n_sorry+=1
           continue
-        if (file_name.endswith("_00000."+extension)):
+        if os.path.isfile(pickle_filename) and pickle_filename.endswith("."+extension):
           if data_subset==0 or \
-            (data_subset==1 and (int(os.path.basename(file_name).split("_00000."+extension)[0][-1])%2==1)) or \
-            (data_subset==2 and (int(os.path.basename(file_name).split("_00000."+extension)[0][-1])%2==0)):
-            file_names.append(os.path.join(dir_name, file_name))
-        elif (file_name.endswith("."+extension)):
-          if data_subset==0 or \
-            (data_subset==1 and (int(os.path.basename(file_name).split("."+extension)[0][-1])%2==1)) or \
-            (data_subset==2 and (int(os.path.basename(file_name).split("."+extension)[0][-1])%2==0)):
-            file_names.append(os.path.join(dir_name, file_name))
-    if work_params.a_list is not None:
-      print ("A_LIST: %d names rejected for not being on the a_list, leaving %d accepted"%(n_sorry, len(file_names)))
-    if subsubset is not None and subsubset_total is not None:
-      file_names = [file_names[i] for i in xrange(len(file_names)) if (i+subsubset)%subsubset_total == 0]
+            (data_subset==1 and (int(os.path.basename(pickle_filename).split("."+extension)[0][-1])%2==1)) or \
+            (data_subset==2 and (int(os.path.basename(pickle_filename).split("."+extension)[0][-1])%2==0)):
+            file_names.append(pickle_filename)
+      continue
+    for file_name in os.listdir(dir_name):
+      if work_params.a_list is not None and os.path.join(dir_name, file_name) not in permissible_file_hash:
+        # use A_list mechanism to reject files not on the "acceptable" list
+        print "SORRY--%s FILE NOT ON THE A-List"%(os.path.join(dir_name, file_name))
+        n_sorry+=1
+        continue
+      if (file_name.endswith("_00000."+extension)):
+        if data_subset==0 or \
+          (data_subset==1 and (int(os.path.basename(file_name).split("_00000."+extension)[0][-1])%2==1)) or \
+          (data_subset==2 and (int(os.path.basename(file_name).split("_00000."+extension)[0][-1])%2==0)):
+          file_names.append(os.path.join(dir_name, file_name))
+      elif (file_name.endswith("."+extension)):
+        if data_subset==0 or \
+          (data_subset==1 and (int(os.path.basename(file_name).split("."+extension)[0][-1])%2==1)) or \
+          (data_subset==2 and (int(os.path.basename(file_name).split("."+extension)[0][-1])%2==0)):
+          file_names.append(os.path.join(dir_name, file_name))
+  if work_params.a_list is not None:
+    print ("A_LIST: %d names rejected for not being on the a_list, leaving %d accepted"%(n_sorry, len(file_names)))
+  if subsubset is not None and subsubset_total is not None:
+    file_names = [file_names[i] for i in xrange(len(file_names)) if (i+subsubset)%subsubset_total == 0]
   print "Number of pickle files found:", len(file_names)
   print
   return file_names
@@ -454,21 +418,10 @@ def load_result (file_name,
   rejected, raises an exception (for tracking statistics).
   """
   # Ignore corrupted pickle files.
-  if params.targlob is not None:
-    file_name,imember = file_name.split(";member")
-    imember,timestamp = imember.split(";timestamp")
-    import sys,tarfile
-    T = tarfile.open(name=file_name, mode='r')
-    K = T.getmembers()
-    this_member = K[int(imember)]
-    fileIO = T.extractfile(member=this_member)
-    import cPickle as pickle
-    obj = pickle.load(fileIO)
-  else:
-    try:
-      obj = easy_pickle.load(file_name=file_name)
-    except Exception:
-      return None
+  try:
+    obj = easy_pickle.load(file_name=file_name)
+  except Exception:
+    return None
   if (not obj.has_key("observations")) :
     return None
   if params.isoform_name is not None:
@@ -681,29 +634,6 @@ class scaling_manager (intensity_data) :
     self.wavelength = flex.double()
     self.initialize()
 
-  @staticmethod
-  def single_reflection_histograms(obs, ISIGI):
-    # Per-bin sum of I and I/sig(I) for each observation.
-    for i in obs.binner().array_indices(i_bin) :
-      import numpy as np
-      index = obs.indices()[i]
-      if (index in ISIGI) :
-        # Compute m, the "merged" intensity, as the average intensity
-        # of all observations of the reflection with the given index.
-        N = 0
-        m = 0
-        for t in ISIGI[index] :
-          N += 1
-          m += t[0]
-          print "Miller %20s n-obs=%4d  sum-I=%10.0f"%(index, N, m)
-          plot_n_bins = N//10
-          hist,bins = np.histogram([t[0] for t in ISIGI[index]],bins=25)
-          width = 0.7*(bins[1]-bins[0])
-          center = (bins[:-1]+bins[1:])/2
-          import matplotlib.pyplot as plt
-          plt.bar(center, hist, align="center", width=width)
-          plt.show()
-
   def scale_all (self, file_names) :
     t1 = time.time()
     if self.params.backend == 'MySQL':
@@ -762,18 +692,14 @@ class scaling_manager (intensity_data) :
                + sum([val for val in self.failure_modes.itervalues()])
     assert checksum == len(file_names)
 
-    high_res_count = (self.d_min_values <= self.params.d_min).count(True)
-    print >> self.log, "Of %d accepted images, %d accepted to %5.2f Angstrom resolution" % \
-      (self.n_accepted, high_res_count, self.params.d_min)
+    if self.params.raw_data.sdfac_refine:
+      self.scale_errors()
 
-    if self.params.raw_data.sdfac_refine or self.params.raw_data.errors_from_sample_residuals:
-      if self.params.raw_data.sdfac_refine:
-        from xfel.merging.algorithms.error_model.sdfac_refine import sdfac_refine as error_modeler
+    if self.params.raw_data.errors_from_sample_residuals:
+      self.errors_from_residuals()
 
-      if self.params.raw_data.errors_from_sample_residuals:
-        from xfel.merging.algorithms.error_model.errors_from_residuals import errors_from_residuals as error_modeler
-
-      error_modeler(self).adjust_errors()
+    if self.params.raw_data.errors_from_mcmc:
+      self.errors_from_mcmc()
 
   def _scale_all_parallel (self, file_names, db_mgr) :
     import multiprocessing
@@ -868,8 +794,7 @@ class scaling_manager (intensity_data) :
       self.n_low_corr += 1
     self.uc_values.add_cell(data.indexed_cell,
       rejected=(not data.accept))
-    if not self.params.short_circuit:
-      self.observations.append(data.n_obs)
+    self.observations.append(data.n_obs)
     if (data.n_obs > 0) :
       frac_rejected = data.n_rejected / data.n_obs
       self.rejected_fractions.append(frac_rejected)
@@ -909,8 +834,7 @@ class scaling_manager (intensity_data) :
 
     self.corr_values.extend(data.corr_values)
     self.d_min_values.extend(data.d_min_values)
-    if not self.params.short_circuit:
-      self.observations.extend(data.observations)
+    self.observations.extend(data.observations)
     self.rejected_fractions.extend(data.rejected_fractions)
     self.wavelength.extend(data.wavelength)
 
@@ -962,6 +886,351 @@ class scaling_manager (intensity_data) :
       "SUMMARY: For %d reflections, got slope %f, correlation %f" \
         % (N, slope, corr)
     return N, corr
+
+  def XXXget_overall_correlation_flex (self, data_a, data_b) :
+    """
+    Correlate any two sets of data.
+    @param data_a data set a
+    @param data_b data set b
+    @return tuple containing correlation coefficent, slope and offset.
+    """
+    # XXX function is deprecated since it does not account for the possibility
+    # that the data sigma might be invalid (set to -1 intentionally)
+    # it would be straightforward to rewrite the calling code to account for this.
+    import math
+
+    assert len(data_a) == len(data_b)
+    corr = 0
+    slope = 0
+    offset = 0
+    try:
+      sum_xx = 0
+      sum_xy = 0
+      sum_yy = 0
+      sum_x  = 0
+      sum_y  = 0
+      N      = 0
+      for i in xrange(len(data_a)):
+        I_r       = data_a[i]
+        I_o       = data_b[i]
+        N      += 1
+        sum_xx += I_r**2
+        sum_yy += I_o**2
+        sum_xy += I_r * I_o
+        sum_x  += I_r
+        sum_y  += I_o
+      slope = (N * sum_xy - sum_x * sum_y) / (N * sum_xx - sum_x**2)
+      offset = (sum_xx * sum_y - sum_x * sum_xy) / (N * sum_xx - sum_x**2)
+      corr  = (N * sum_xy - sum_x * sum_y) / (math.sqrt(N * sum_xx - sum_x**2) *
+                 math.sqrt(N * sum_yy - sum_y**2))
+    except ZeroDivisionError:
+      pass
+
+    return corr, slope, offset
+
+  def normal_probability_plot(self, data, rankits_sel=None, plot=False):
+    """ Use normal probability analysis to determine if a set of data is normally distributed
+    See https://en.wikipedia.org/wiki/Normal_probability_plot.
+    Rankits are computed in the same way as qqnorm does in R.
+    @param data flex array
+    @param rankits_sel only use the rankits in a certain range. Useful for outlier rejection. Should be
+    a tuple such as (-0.5,0.5).
+    @param plot whether to show the normal probabilty plot
+    """
+    from scitbx.math import distributions
+    import numpy as np
+    norm = distributions.normal_distribution()
+
+    n = len(data)
+    if n <= 10:
+      a = 3/8
+    else:
+      a = 0.5
+
+    sorted_data = flex.sorted(data)
+    rankits = flex.double([norm.quantile((i+1-a)/(n+1-(2*a))) for i in xrange(n)])
+
+    if rankits_sel is None:
+      corr, slope, offset = self.get_overall_correlation_flex(sorted_data, rankits)
+    else:
+      sel = (rankits >= rankits_sel[0]) & (rankits <= rankits_sel[1])
+      corr, slope, offset = self.get_overall_correlation_flex(sorted_data.select(sel), rankits.select(sel))
+
+    if plot:
+      from matplotlib import pyplot as plt
+      x = np.linspace(-500,500,100) # 100 linearly spaced numbers
+      y = slope * x + offset
+      plt.scatter(sorted_data, rankits)
+      plt.plot(x,y)
+      plt.show()
+
+    return corr, slope, offset
+
+  def get_initial_sdparams_estimates(self):
+    """
+    Use normal probability analysis to compute intial sdfac and sdadd parameters.
+    """
+    from xfel import compute_normalized_deviations
+    all_sigmas_normalized = compute_normalized_deviations(self.ISIGI, self.miller_set.indices())
+
+    corr, slope, offset = self.normal_probability_plot(all_sigmas_normalized, (-0.5, 0.5))
+    sdfac = slope
+    sdb = 0
+    sdadd = offset
+
+    return sdfac, sdb, sdadd
+
+
+  def get_binned_intensities(self, n_bins=100):
+    """
+    Using self.ISIGI, bin the intensities using the following procedure:
+    1) Find the minimum and maximum intensity values.
+    2) Divide max-min by n_bins. This is the bin step size
+    The effect is
+    @param n_bins number of bins to use.
+    @return a tuple with an array of selections for each bin and an array of median
+    intensity values for each bin.
+    """
+    print >> self.log, "Computing intensity bins.",
+    all_mean_Is = flex.double()
+    only_means = flex.double()
+    for hkl_id in xrange(self.n_refl):
+      hkl = self.miller_set.indices()[hkl_id]
+      if hkl not in self.ISIGI: continue
+      n = len(self.ISIGI[hkl])
+      # get scaled intensities
+      intensities = flex.double([self.ISIGI[hkl][i][0] for i in xrange(n)])
+      meanI = flex.mean(intensities)
+      only_means.append(meanI)
+      all_mean_Is.extend(flex.double([meanI]*n))
+    step = (flex.max(only_means)-flex.min(only_means))/n_bins
+    print >> self.log, "Bin size:", step
+
+    sels = []
+    binned_intensities = []
+    min_all_mean_Is = flex.min(all_mean_Is)
+    for i in xrange(n_bins):
+      sel = (all_mean_Is > (min_all_mean_Is + step * i)) & (all_mean_Is < (min_all_mean_Is + step * (i+1)))
+      if sel.all_eq(False): continue
+      sels.append(sel)
+      binned_intensities.append((step/2 + step*i)+min(only_means))
+
+    #for i, (sel, intensity) in enumerate(zip(sels, binned_intensities)):
+    #  print >> self.log, "Bin %02d, number of observations: % 10d, midpoint intensity: %f"%(i, sel.count(True), intensity)
+
+    return sels, binned_intensities
+
+  def scale_errors(self):
+    """
+    Adjust sigmas according to Evans, 2011 Acta D and Evans and Murshudov, 2013 Acta D
+    """
+    print >> self.log, "Starting scale_errors"
+    print >> self.log, "Computing initial estimates of sdfac, sdb and sdadd"
+    sdfac, sdb, sdadd = self.get_initial_sdparams_estimates()
+
+    print >> self.log, "Initial estimates:", sdfac, sdb, sdadd
+
+    from xfel import compute_normalized_deviations, apply_sd_error_params
+    from scitbx.simplex import simplex_opt
+    class simplex_minimizer(object):
+      """Class for refining sdfac, sdb and sdadd"""
+      def __init__(self, sdfac, sdb, sdadd, data, indices, bins):
+        """
+        @param sdfac Initial value for sdfac
+        @param sdfac Initial value for sdfac
+        @param sdfac Initial value for sdfac
+        @param data ISIGI dictionary of unmerged intensities
+        @param indices array of miller indices to refine against
+        @params bins array of flex.bool object specifying the bins to use to calculate the functional
+        """
+        self.data = data
+        self.intensity_bin_selections = bins
+        self.indices = indices
+        self.n = 3
+        self.x = flex.double([sdfac, sdb, sdadd])
+        self.starting_simplex = []
+        for i in xrange(self.n+1):
+          self.starting_simplex.append(flex.random_double(self.n))
+
+        self.optimizer = simplex_opt( dimension = self.n,
+                                      matrix    = self.starting_simplex,
+                                      evaluator = self,
+                                      tolerance = 1e-1)
+        self.x = self.optimizer.get_solution()
+
+      def target(self, vector):
+        """ Compute the functional by first applying the current values for the sd parameters
+        to the input data, then computing the complete set of normalized deviations and finally
+        using those normalized deviations to compute the functional."""
+        sdfac, sdb, sdadd = vector
+
+        data = apply_sd_error_params(self.data, sdfac, sdb, sdadd)
+        all_sigmas_normalized = compute_normalized_deviations(data, self.indices)
+
+        f = 0
+        for bin in self.intensity_bin_selections:
+          binned_normalized_sigmas = all_sigmas_normalized.select(bin)
+          n = len(binned_normalized_sigmas)
+          if n == 0: continue
+          # weighting scheme from Evans, 2011
+          w = math.sqrt(n)
+          # functional is weight * (1-rms(normalized_sigmas))^s summed over all intensitiy bins
+          f += w * ((1-math.sqrt(flex.mean(binned_normalized_sigmas*binned_normalized_sigmas)))**2)
+
+        print >> self.log, "f: % 12.1f, sdfac: %8.5f, sdb: %8.5f, sdadd: %8.5f"%(f, sdfac, sdb, sdadd)
+        return f
+
+    print >> self.log, "Refining error correction parameters sdfac, sdb, and sdadd"
+    sels, binned_intensities = self.get_binned_intensities()
+    minimizer = simplex_minimizer(sdfac, sdb, sdadd, self.ISIGI, self.miller_set.indices(), sels)
+    sdfac, sdb, sdadd = minimizer.x
+    print >> self.log, "Final sdadd: %8.5f, sdb: %8.5f, sdadd: %8.5f"%(sdfac, sdb, sdadd)
+
+    print >> self.log, "Applying sdfac/sdb/sdadd 1"
+    self.ISIGI = apply_sd_error_params(self.ISIGI, sdfac, sdb, sdadd)
+
+    self.summed_weight= flex.double(self.n_refl, 0.)
+    self.summed_wt_I  = flex.double(self.n_refl, 0.)
+
+    print >> self.log, "Applying sdfac/sdb/sdadd 2"
+    for hkl_id in xrange(self.n_refl):
+      hkl = self.miller_set.indices()[hkl_id]
+      if hkl not in self.ISIGI: continue
+
+      n = len(self.ISIGI[hkl])
+
+      for i in xrange(n):
+        Intensity = self.ISIGI[hkl][i][0] # scaled intensity
+        sigma = Intensity / self.ISIGI[hkl][i][1] # corrected sigma
+        variance = sigma * sigma
+        self.summed_wt_I[hkl_id] += Intensity / variance
+        self.summed_weight[hkl_id] += 1 / variance
+
+    if False:
+      # validate using http://ccp4wiki.org/~ccp4wiki/wiki/index.php?title=Symmetry%2C_Scale%2C_Merge#Analysis_of_Standard_Deviations
+      print >> self.log, "Validating"
+      all_sigmas_normalized = compute_normalized_deviations(self.ISIGI, self.miller_set.indices())
+      binned_rms_normalized_sigmas = []
+
+      for i, sel in enumerate(sels):
+        binned_rms_normalized_sigmas.append(math.sqrt(flex.mean(all_sigmas_normalized.select(sel)*all_sigmas_normalized.select(sel))))
+
+      from matplotlib import pyplot as plt
+      plt.plot(binned_intensities, binned_rms_normalized_sigmas, 'o')
+      plt.show()
+
+  def errors_from_residuals(self):
+    """
+    """
+    print >> self.log, "Computing error estimates from sample residuals"
+    self.summed_weight= flex.double(self.n_refl, 0.)
+    self.summed_wt_I  = flex.double(self.n_refl, 0.)
+
+    for hkl_id in xrange(self.n_refl):
+      hkl = self.miller_set.indices()[hkl_id]
+      if hkl not in self.ISIGI: continue
+
+      n = len(self.ISIGI[hkl])
+      if n > 1:
+        variance = flex.mean_and_variance(flex.double([self.ISIGI[hkl][i][0] for i in xrange(n)])).unweighted_sample_variance()
+      else:
+        continue
+
+      for i in xrange(n):
+        Intensity = self.ISIGI[hkl][i][0] # scaled intensity
+        self.summed_wt_I[hkl_id] += Intensity / variance
+        self.summed_weight[hkl_id] += 1 / variance
+    print >> self.log, "Done computing error estimates"
+
+
+
+
+  def errors_from_mcmc(self):
+    """
+     MCMC method to estimate mean/stdev of intensity measurements of XFEL data
+    """
+    print >> self.log, "Computing error estimates using Markov Chain Monte Carlo Ideal Xtal approach"
+    print >> self.log, "Number of reflections being considered",self.n_refl
+    import numpy as np
+    self.summed_weight= flex.double(self.n_refl, 0.)
+    self.summed_wt_I  = flex.double(self.n_refl, 0.)
+    hkl_list = []
+#    I_stats = []
+    for hkl_id in xrange(self.n_refl):
+      hkl = self.miller_set.indices()[hkl_id]
+      if hkl not in self.ISIGI: continue
+      hkl_list.append((hkl, hkl_id))
+      # Only for debugging, single instance of do_work
+#      if hkl_id in [553]:
+#      if hkl_id in [553,2765,4940,5880,8839,9729,9807,10404,10539,10767,11499,14107,16261,16276]:
+#        I_stats.append((self.do_work((hkl, hkl_id))))
+    from libtbx import easy_mp
+    I_stats = easy_mp.parallel_map(
+      func = self.do_work,
+      iterable = hkl_list,
+      processes=48,
+      method='multiprocessing',
+      preserve_order=True,
+      preserve_exception_message=True)
+
+    print 'After easy MP is done'
+    for i in xrange(len(I_stats)): 
+#      from IPython import embed; embed(); exit()
+      print 'average intensity and variance = ', i,I_stats[i]
+      self.summed_wt_I[I_stats[i][2]] = I_stats[i][0]
+      self.summed_weight[I_stats[i][2]] = I_stats[i][1]
+
+  def do_work(self, item_list):
+    from scitbx.lstbx.tests.exgaussian.mcmc_exgauss import mcmc_exgauss
+    import numpy as np
+    hkl, hkl_id = item_list
+    n = len(self.ISIGI[hkl])
+    print 'HKL value = ', hkl, n, hkl_id
+    I_avg_ideal = 0.0
+    I_var_ideal = 1.0
+    if n > 1:
+      try:
+        mcmc_helper = mcmc_exgauss([self.ISIGI[hkl][i][0] for i in xrange(n)],cdf_cutoff=0.95, 
+                                   nsteps=5000, t_start=500, dt=10, plot=False)
+        I_avg_ideal, I_var_ideal, accept_rate = mcmc_helper.run()
+##        thinned_params = mcmc_helper.run()
+#        import pdb; pdb.set_trace()
+        print 'accept rate for hkl value=',hkl, accept_rate, hkl_id
+        if I_var_ideal < 0.1:
+          print "variance is too low"
+          I_avg_ideal = np.mean([self.ISIGI[hkl][i][0] for i in xrange(n)])
+          I_var_ideal = np.var([self.ISIGI[hkl][i][0] for i in xrange(n)])
+#        I_avg_ideal = np.random.normal(10000., 100.)
+#        I_var_ideal = np.random.normal(100., 5.)
+      except Exception,e:
+        
+#        from IPython import embed; embed(); exit()
+#        import pdb, traceback, sys
+#        type, value, tb = sys.exc_info()
+#        traceback.print_exc()
+#        pdb.post_mortem(tb)
+        print 'For some reason minimization/MCMC doesnt work', hkl_id
+#        try:
+#        I_avg_ideal = np.mean([self.ISIGI[hkl][i][0] for i in xrange(n)])
+#        I_var_ideal = np.var([self.ISIGI[hkl][i][0] for i in xrange(n)])
+#        except Exception,e:
+#          print 'HKL value that completely messes up', hkl,n
+#        np.random.seed()
+        I_avg_ideal = np.random.normal(10000., 100.)
+        I_var_ideal = np.random.normal(100., 5.)
+      # This part needs some thought. Currently I am using what Neutze did and printing out variances
+      # that will be used as it is to get stdev i.e stdev = sqrt(variance) in SigI_all
+      # However if you look errors_from_residuals(), stdev = sqrt(variance/N) in SigI_all
+    summed_wt_I = (I_avg_ideal/I_var_ideal)
+    summed_weight = 1./I_var_ideal
+#    if np.isnan(summed_wt_I):
+#      from IPython import embed; embed(); exit()
+#      self.summed_wt_I[hkl_id] = np.random.normal(10000., 100.) #(I_avg_ideal/I_var_ideal)
+#      self.summed_weight[hkl_id] = np.random.normal(100., 5.) #/I_var_ideal
+#    del(mcmc_helper)
+    return (summed_wt_I, summed_weight, hkl_id)
+##    return (thinned_params, hkl_id)
+    print >> self.log, "Done computing error estimates", I_avg_ideal, I_var_ideal
 
   def finalize_and_save_data (self) :
     """
@@ -1075,14 +1344,10 @@ class scaling_manager (intensity_data) :
       image_info = ImageInfo(self.params.predictions_to_edge.image, detector_phil=self.params.predictions_to_edge.detector_phil)
     else:
       image_info = None
-
-    if self.params.cell_rejection.unit_cell == Auto:
-      self.params.cell_rejection.unit_cell = self.params.target_unit_cell
-
     try :
       result = load_result(
         file_name=file_name,
-        reference_cell=self.params.cell_rejection.unit_cell,
+        reference_cell=self.params.target_unit_cell,
         ref_bravais_type=self.ref_bravais_type,
         params=self.params,
         reindex_op = reindex_op,
@@ -1302,7 +1567,6 @@ class scaling_manager (intensity_data) :
 
     data = frame_data(self.n_refl, file_name)
     data.set_indexed_cell(indexed_cell)
-    data.current_orientation = result['current_orientation'][0]
     data.d_min = observations.d_min()
 
     # Ensure that match_multi_indices() will return identical results
@@ -1421,8 +1685,6 @@ class scaling_manager (intensity_data) :
     PF = factory(self.params)
     postrefinement_algorithm = PF.postrefinement_algorithm()
 
-    unscaled_obs = observations
-
     if self.params.postrefinement.enable:
       # Refactorization of the Sauter(2015) code; result should be same to 5 significant figures.
       # Lack of binary identity is due to the use of Python for old-code weighted correlation,
@@ -1434,8 +1696,6 @@ class scaling_manager (intensity_data) :
         observations_original_index,observations,matches = postx.result_for_cxi_merge(file_name)
       except (AssertionError,ValueError,RuntimeError),e:
         return null_data(file_name=file_name, log_out=out.getvalue(), reason=e)
-
-      self.postrefinement_params = postx.parameterization_class(postx.MINI.x)
 
       if self.params.postrefinement.show_trumpet_plot is True:
         from xfel.cxi.trumpet_plot import trumpet_wrapper
@@ -1486,8 +1746,6 @@ class scaling_manager (intensity_data) :
     print >> out, "Rejected %d reflections with negative intensities" % \
         data.n_rejected
 
-    data.unscaled_obs = {}
-
     # Apply the correlation coefficient threshold, if appropriate.
     if self.params.scaling.algorithm == 'mark0' and \
        corr <= self.params.min_corr:
@@ -1515,8 +1773,6 @@ class scaling_manager (intensity_data) :
           data.ISIGI[index].append(isigi)
         else:
           data.ISIGI[index] = [isigi]
-          data.unscaled_obs[index] = flex.double()
-        data.unscaled_obs[index].append(unscaled_obs.data()[pair[1]])
 
         sigma = observations.sigmas()[pair[1]] / slope
         variance = sigma * sigma
@@ -1527,17 +1783,6 @@ class scaling_manager (intensity_data) :
     data.set_log_out(out.getvalue())
     data.show_log_out(sys.stdout)
     return data
-
-  def sum_intensities(self):
-    sum_I = flex.double(self.miller_set.size(), 0.)
-    sum_I_SIGI = flex.double(self.miller_set.size(), 0.)
-    for i in xrange(self.miller_set.size()) :
-      index = self.miller_set.indices()[i]
-      if index in self.ISIGI :
-        for t in self.ISIGI[index]:
-          sum_I[i] += t[0]
-          sum_I_SIGI[i] += t[1]
-    return sum_I, sum_I_SIGI
 
 def consistent_set_and_model(work_params,i_model=None):
   # Adjust the minimum d-spacing of the generated Miller set to assure
@@ -1581,13 +1826,7 @@ def run(args):
   if ("--help" in args) :
     iotbx.phil.parse(master_phil).show(attributes_level=2)
     return
-  processor = iotbx.phil.process_command_line(args=args, master_string=master_phil)
-  if len(processor.remaining_args) > 0:
-    print "The following arguments were not recognized:"
-    print "\n".join(processor.remaining_args)
-    iotbx.phil.parse(master_phil).show(attributes_level=2)
-    return
-  phil = processor.show()
+  phil = iotbx.phil.process_command_line(args=args, master_string=master_phil).show()
   work_params = phil.work.extract()
   from xfel.merging.phil_validation import application
   application(work_params)
@@ -1662,7 +1901,14 @@ def run(args):
   print >> out, "\n"
 
   # Sum the observations of I and I/sig(I) for each reflection.
-  sum_I, sum_I_SIGI = scaler.sum_intensities()
+  sum_I = flex.double(miller_set.size(), 0.)
+  sum_I_SIGI = flex.double(miller_set.size(), 0.)
+  for i in xrange(miller_set.size()) :
+    index = miller_set.indices()[i]
+    if index in scaler.ISIGI :
+      for t in scaler.ISIGI[index]:
+        sum_I[i] += t[0]
+        sum_I_SIGI[i] += t[1]
 
   miller_set_avg = miller_set.customized_copy(
     unit_cell=work_params.target_unit_cell)
@@ -1710,6 +1956,12 @@ Asu. Multiplicity  = # measurements / # Miller indices theoretical in asymmetric
 Obs. Multiplicity  = # measurements / # unique Miller indices present in data
 Pred. Multiplicity = # predictions on all accepted images / # Miller indices theoretical in asymmetric unit"""
   print >> out, explanation
+  # stuff related to mcmc here, should be commented when using normal code
+  from libtbx import easy_pickle
+  # This is the part where you can print out reflection intensities
+#  easy_pickle.dump('merged_images.pickle', scaler.ISIGI)
+  #
+  #
   mtz_file, miller_array = scaler.finalize_and_save_data()
   #table_pickle_file = "%s_graphs.pkl" % work_params.output.prefix
   #easy_pickle.dump(table_pickle_file, [table1, table2])
@@ -1786,11 +2038,35 @@ def show_overall_observations(
     I_sigI_sum = flex.sum(intensity * flex.sqrt(summed_weight.select(sel_o)))
     I_n = sel_o.count(True)
 
-    if work_params is not None and \
-     (work_params.plot_single_index_histograms and \
-      N >= 30 and \
-      work_params.data_subset == 0):
-      scaling_manager.single_reflection_histograms(obs, ISIGI)
+    # Per-bin sum of I and I/sig(I) for each observation.
+    # R-merge statistics have been removed because
+    #  >> R-merge is defined on whole structure factor intensities, either
+    #     full observations or summed partials from the rotation method.
+    #     For XFEL data all reflections are assumed to be partial; no
+    #     method exists now to convert partials to fulls.
+    if work_params.plot_single_index_histograms: import numpy as np
+    for i in obs.binner().array_indices(i_bin) :
+      index = obs.indices()[i]
+      if (index in ISIGI) :
+        # Compute m, the "merged" intensity, as the average intensity
+        # of all observations of the reflection with the given index.
+        N = 0
+        m = 0
+        for t in ISIGI[index] :
+          N += 1
+          m += t[0]
+        if work_params is not None and \
+           (work_params.plot_single_index_histograms and \
+            N >= 30 and \
+            work_params.data_subset == 0):
+          print "Miller %20s n-obs=%4d  sum-I=%10.0f"%(index, N, m)
+          plot_n_bins = N//10
+          hist,bins = np.histogram([t[0] for t in ISIGI[index]],bins=25)
+          width = 0.7*(bins[1]-bins[0])
+          center = (bins[:-1]+bins[1:])/2
+          import matplotlib.pyplot as plt
+          plt.bar(center, hist, align="center", width=width)
+          plt.show()
 
     if sel_measurements > 0:
       mean_I = mean_I_sigI = 0
