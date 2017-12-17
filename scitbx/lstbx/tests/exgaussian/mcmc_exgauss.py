@@ -271,17 +271,17 @@ class mcmc_exgauss():
 #    dt = 1000
     maxI = np.max(X1) #+np.max(X1)/2.
     minI = np.min(X1) #-np.min(X1)/2.
-    proposal_width =  0.01*np.abs(maxI-minI)
+    proposal_width =  0.001*np.abs(maxI-minI)
 #    print 'initial guesses and proposal width = ',mu0, sigma0, tau0, proposal_width
     mcmc_helper = mcmc()
     I_avg_ideal, I_var_ideal, accept_rate= mcmc_helper.sampler(X1, samples=self.nsteps, mu_init= mu0,sigma_init = sigma0, tau_init = tau0,
                    proposal_width = proposal_width, t_start = self.t_start, dt = self.dt,cdf_cutoff=self.cdf_cutoff,
-                   plot=False, seed=self.mcmc_seed)
+                   plot=False, analyse_mcmc = True, seed=self.mcmc_seed)
 #    mu,sigma, tau = params[-1]
     mu,sigma, tau = [mu0, sigma0, tau0]
 
-    plt.figure(3)
-    plt.plot(X1, Y1, '-*g', linewidth=3.0)
+#    plt.figure(3)
+#    plt.plot(X1, F1, '-*g', linewidth=3.0)
 #    for count in range(len(posterior)):
 #      F1 = intensities.exgauss_cdf_array(X1,posterior[count][0], posterior[count][1], posterior[count][2])
 #      plt.plot(X1, F1, 'grey')
@@ -328,5 +328,5 @@ class mcmc_exgauss():
 
 if __name__ == '__main__':
   import sys
-  mcmc_test = mcmc_exgauss(datasource=sys.argv[1], cdf_cutoff=0.95, nsteps=50000, t_start=40000, dt=10, plot=True)
+  mcmc_test = mcmc_exgauss(datasource=sys.argv[1], cdf_cutoff=0.95, nsteps=1000, t_start=100, dt=10, plot=True)
   mcmc_test.run()
