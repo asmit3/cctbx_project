@@ -86,8 +86,11 @@ class mcmc():
 
   def sampler(self, data, samples=5, mu_init=0.5, sigma_init = 0.5,tau_init = 0.5, 
               proposal_width = 10.0,t_start=1, dt=1,cdf_cutoff=0.95, 
-              plot=False,analyse_mcmc = False,seed=22):
+              plot=False,analyse_mcmc = False,seed=22, residual = 0.0, prior_errors = [1., 1., 1.]):
     np.random.seed(seed) # was with seedhere
+    data = np.sort(data)
+    maxI = np.max(data) #+np.max(data)/2.
+    minI = np.min(data) #-np.min(data)/2.
     mu_current = mu_init
     sigma_current = sigma_init
     tau_current = tau_init
@@ -96,27 +99,26 @@ class mcmc():
     if (mu_alt == mu_init) and (sigma_alt == sigma_init) and (tau_alt == tau_init):
       mu_alt, sigma_alt, tau_alt = self.initial_guess0(data, wiki_method=True)
 #
+    dmu,dsigma,dtau = self.get_error_estimate_of_params(residual, data, mu_init, sigma_init, tau_init)
+#    from IPython import embed; embed(); exit()
     mu_prior_mu = mu_init
-    mu_prior_sd = (np.abs(mu_alt-mu_init))/2000.
+    mu_prior_sd = dmu #(np.abs(mu_alt-mu_init))/2000.
     sd_prior_mu = sigma_init
-    sd_prior_sd = (np.abs(sigma_alt-sigma_init))/2000.
+    sd_prior_sd = dsigma #(np.abs(sigma_alt-sigma_init))/2000.
     tau_prior_mu = tau_init
-    tau_prior_sd = np.abs(tau_alt-tau_init)/2000.
+    tau_prior_sd = dtau #np.abs(tau_alt-tau_init)/2000.
     accept_counter = 0
 #
     posterior = [[mu_current,sigma_current, tau_current]]
-    data = np.sort(data)
-    maxI = np.max(data) #+np.max(data)/2.
-    minI = np.min(data) #-np.min(data)/2.
 
     I_mcmc = []
 #    print 'Starting likelihood, sd, and # of data pts = ', self.exgauss(data, mu_current, sigma_current, tau_current), mu_prior_sd, sd_prior_sd, tau_prior_sd, len(data)
     for i in range(samples):
 #      print 'numstep = ',i
 # trial move
-      mu_proposal =  np.random.normal(mu_current,1.3* mu_prior_sd/1.)
-      sigma_proposal = np.abs(np.random.normal(sigma_current, 1.3*sd_prior_sd/1.)) #
-      tau_proposal = np.abs(np.random.normal(tau_current, 1.3*tau_prior_sd/1.))
+      mu_proposal =  np.random.normal(mu_current,1.* mu_prior_sd/1.)
+      sigma_proposal = np.abs(np.random.normal(sigma_current, 1.*sd_prior_sd/1.)) #
+      tau_proposal = np.abs(np.random.normal(tau_current, 1.*tau_prior_sd/1.))
       likelihood_current = self.exgauss(data,mu_current, sigma_current, tau_current) # multiply the probabilties
       likelihood_proposal = self.exgauss(data,mu_proposal,sigma_proposal, tau_proposal) # multiply
 
@@ -138,7 +140,9 @@ class mcmc():
         accept_counter +=1
       if i > t_start and i%dt:
         EXG= ExGauss(10000, minI, maxI, mu_current,sigma_current,tau_current)
+        #from IPython import embed; embed(); exit()
         I_mcmc.append(EXG.find_x_from_iter(cdf_cutoff))
+        #I_mcmc.append(EXG.interpolate_x_value(cdf_cutoff))
         del(EXG)
         if analyse_mcmc:
           posterior.append([mu_current, sigma_current, tau_current])
@@ -164,14 +168,16 @@ class mcmc():
       So don't take the variable name too literally
     '''
     print 'Printing MCMC summary statistics'
+    rmsd_flag =False
     # a.
     I_95_avg = np.mean(I_mcmc)
-    print 'I_95_avg = ',I_95_avg
+    print 'I_95_avg = ',I_95_avg,'+/-',np.std(I_mcmc)
     # b. 
     I_95_exp, cdf_exp = self.find_x_from_expdata_annlib(data,cdf_cutoff)
     d_I_95_avg = I_95_avg - I_95_exp
     print 'Experimental I_95 = ',I_95_exp
     print 'Deviation of average I_95 from experimental I_95 = ',d_I_95_avg
+    #exit()
 
     plt.figure(3)
     data = np.sort(data)
@@ -201,12 +207,13 @@ class mcmc():
     plt.xlabel('time',fontsize=18)
     plt.ylabel('I_95_mcmc', fontsize=18)
     # e. 
-    rmsd = self.calc_rmsd(posterior, data,cdf_exp)
-    print 'Average RMSD of datapoints', np.mean(rmsd)
-    plt.figure(6)
-    plt.plot(range(len(rmsd)), rmsd,'-*r') 
-    plt.xlabel('time',fontsize=18)
-    plt.ylabel('RMSD',fontsize=18)
+    if (rmsd_flag):
+      rmsd = self.calc_rmsd(posterior, data,cdf_exp)
+      print 'Average RMSD of datapoints', np.mean(rmsd)
+      plt.figure(6)
+      plt.plot(range(len(rmsd)), rmsd,'-*r') 
+      plt.xlabel('time',fontsize=18)
+      plt.ylabel('RMSD',fontsize=18)
 
     plt.show()
 
@@ -254,6 +261,91 @@ class mcmc():
       print 'in the except block of find_x_from_expdata_annlib', y
 #      print 'true cdf value from interpol',self.exgauss_cdf(x)
       return (lookup_table_x[idx],y_cdf)
+
+  def get_error_estimate_of_params(self, residual, data, mu0, sigma0,tau0):
+    mu2grad,sigma2grad,tau2grad = self.get_residual2_grad(data, mu0, sigma0, tau0) 
+    #mu2grad,sigma2grad,tau2grad = self.get_hessian(data, mu0, sigma0, tau0) 
+    #dmu = np.sqrt(1.0*residual/mu2grad/len(data))
+    #dsigma = np.sqrt(1.0*residual/sigma2grad/len(data))
+    #dtau = np.sqrt(1.0*residual/tau2grad/len(data))
+    dmu = np.sqrt(1.0/mu2grad/1.)
+    dsigma = np.sqrt(1.0/sigma2grad/1.)
+    dtau = np.sqrt(1.0/tau2grad/1.)
+    print 'my errors = ',dmu,dsigma,dtau
+    return dmu,dsigma,dtau
+
+  def get_residual2_grad(self, data, mu, sigma, tau):
+    result = 0.0
+    mu_grad = 0.0
+    sigma_grad = 0.0
+    tau_grad = 0.0
+    prefactor = 1.0
+#    print 'INSIDE RESIDUAL',mu,sigma,tau
+    for i in range(0, len(data)):
+      y_calc = self.exgauss_cdf(data[i], mu, sigma, tau)
+      u = (data[i]-mu)/tau
+      v = sigma/tau
+      phi_uv2v = self.gauss_cdf(u, v*v, v)
+      z1 = (data[i] - mu)/(sigma*np.sqrt(2))
+      z2 = (data[i]- mu-(sigma*sigma/tau))/(sigma*np.sqrt(2))
+      exp_1 = np.exp(-z1*z1)/np.sqrt(2*np.pi*sigma*sigma)
+      exp_2 = np.exp(-z2*z2)/np.sqrt(np.pi)
+      exp_0 = np.exp(-u+0.5*v*v)
+      if np.isinf(exp_0):
+        mu_grad+=(prefactor*((-exp_1)))*(prefactor*((-exp_1)))
+        sigma_grad+=(prefactor*((-exp_1*z1*np.sqrt(2))))*(prefactor*((-exp_1*z1*np.sqrt(2))))
+        tau_grad+=(prefactor*((0.0)))*(prefactor*((0.0)))
+#        print 'isinf mu_grad',mu_grad, (prefactor*((-exp_1)))
+      else:
+        mu_grad+=(prefactor*((-exp_1) - exp_0*((phi_uv2v/tau) + (exp_2*(-1./(sigma*np.sqrt(2)))))))*(prefactor*((-exp_1) - exp_0*((phi_uv2v/tau) + (exp_2*(-1./(sigma*np.sqrt(2)))))))
+        sigma_grad+=(prefactor*((-exp_1*z1*np.sqrt(2)) - exp_0*((phi_uv2v*sigma/(tau*tau))+(exp_2*(-np.sqrt(2)/tau - z2/sigma)))))*(prefactor*((-exp_1*z1*np.sqrt(2)) - exp_0*((phi_uv2v*sigma/(tau*tau))+(exp_2*(-np.sqrt(2)/tau - z2/sigma)))))
+        tau_grad+=(prefactor*((0.0) - exp_0*((phi_uv2v*u/tau) - (phi_uv2v*v*v/tau) + (exp_2*(v/(tau*np.sqrt(2)))))))*(prefactor*((0.0) - exp_0*((phi_uv2v*u/tau) - (phi_uv2v*v*v/tau) + (exp_2*(v/(tau*np.sqrt(2)))))))
+#        print 'is NOT inf mu_grad',mu_grad, (prefactor*((-exp_1) - exp_0*((phi_uv2v/tau) + (exp_2*(-1./(sigma*np.sqrt(2)))))))
+    #from IPython import embed; embed(); exit()
+
+    return 1.*mu_grad,1.*sigma_grad,1.*tau_grad
+
+  def get_hessian(self, data, mu, sigma, tau):
+    result = 0.0
+    mu_grad = 0.0
+    sigma_grad = 0.0
+    tau_grad = 0.0
+    prefactor = 1.0
+    lookup_table_x = np.sort(data)
+    lookup_table_cdf = np.array(range(1,len(lookup_table_x)+1))/float(len(lookup_table_x))
+    lookup_table_cdf[:] = [z-0.5/len(lookup_table_cdf) for z in lookup_table_cdf]
+#    print 'INSIDE RESIDUAL',mu,sigma,tau
+    for i in range(0, len(data)):
+      y_calc = self.exgauss_cdf(data[i], mu, sigma, tau)
+      u = (data[i]-mu)/tau
+      v = sigma/tau
+      phi_uv2v = self.gauss_cdf(u, v*v, v)
+      z1 = (data[i] - mu)/(sigma*np.sqrt(2))
+      z2 = (data[i]- mu-(sigma*sigma/tau))/(sigma*np.sqrt(2))
+      exp_1 = np.exp(-z1*z1)/np.sqrt(2*np.pi*sigma*sigma)
+      exp_2 = np.exp(-z2*z2)/np.sqrt(np.pi)
+      exp_0 = np.exp(-u+0.5*v*v)    
+      ri = lookup_table_cdf[i] - y_calc
+      if np.isinf(exp_0):
+        # (df/da)*(df/da)
+        mu_grad+=(prefactor*((-exp_1)))*(prefactor*((-exp_1)))
+        sigma_grad+=(prefactor*((-exp_1*z1*np.sqrt(2))))*(prefactor*((-exp_1*z1*np.sqrt(2))))
+        tau_grad+=(prefactor*((0.0)))*(prefactor*((0.0)))
+        # -ri*(d2f/da2)
+        mu_grad += -ri*((-exp_1*z1*np.sqrt(2)/sigma))
+        sigma_grad += -ri*(exp_1*z1*np.sqrt(2)*(1-2*z1*z1)/sigma)
+        tau_grad += -ri*(0.0)
+      else:
+        # (df/da)*(df/da)
+        mu_grad+=(prefactor*((-exp_1) - exp_0*((phi_uv2v/tau) + (exp_2*(-1./(sigma*np.sqrt(2)))))))*(prefactor*((-exp_1) - exp_0*((phi_uv2v/tau) + (exp_2*(-1./(sigma*np.sqrt(2)))))))
+        sigma_grad+=(prefactor*((-exp_1*z1*np.sqrt(2)) - exp_0*((phi_uv2v*sigma/(tau*tau))+(exp_2*(-np.sqrt(2)/tau - z2/sigma)))))*(prefactor*((-exp_1*z1*np.sqrt(2)) - exp_0*((phi_uv2v*sigma/(tau*tau))+(exp_2*(-np.sqrt(2)/tau - z2/sigma)))))
+        tau_grad+=(prefactor*((0.0) - exp_0*((phi_uv2v*u/tau) - (phi_uv2v*v*v/tau) + (exp_2*(v/(tau*np.sqrt(2)))))))*(prefactor*((0.0) - exp_0*((phi_uv2v*u/tau) - (phi_uv2v*v*v/tau) + (exp_2*(v/(tau*np.sqrt(2)))))))
+        # -ri*(d2f/da2)
+        mu_grad += -ri*((-exp_1*z1*np.sqrt(2)/sigma))
+        sigma_grad += -ri*((exp_1*z1*np.sqrt(2)*(1-2*z1*z1)/sigma))
+        tau_grad += -ri*((0.0))
+    return mu_grad,sigma_grad,tau_grad
+
 
 # function to display
 # FIXME - DOES NOT WORK FOR EXGAUSSIAN

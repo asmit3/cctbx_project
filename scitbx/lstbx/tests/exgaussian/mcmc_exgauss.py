@@ -6,6 +6,7 @@ from libtbx.test_utils import approx_equal, Exception_expected
 import math
 import numpy as np
 from test3_logarithm import mcmc
+from scitbx.matrix import sqr
 
 class exgauss_fit(
   normal_eqns.non_linear_ls,
@@ -167,6 +168,7 @@ class exgauss_fit(
         sigma_grad.append(prefactor*((-exp_1*z1*np.sqrt(2)) - exp_0*((phi_uv2v*sigma/(tau*tau))+(exp_2*(-np.sqrt(2)/tau - z2/sigma)))))
         tau_grad.append(prefactor*((0.0) - exp_0*((phi_uv2v*u/tau) - (phi_uv2v*v*v/tau) + (exp_2*(v/(tau*np.sqrt(2)))))))
 
+#    print 'from MINI sum',np.sum([x*x for x in mu_grad]), np.sum([x*x for x in sigma_grad]), np.sum([x*x for x in tau_grad])
     return [flex.double(mu_grad), flex.double(sigma_grad), flex.double(tau_grad)]
 
 
@@ -233,6 +235,32 @@ class mcmc_exgauss():
     exercise_levenberg_marquardt(intensities)
     initial = intensities.x_0
     mu0,sigma0,tau0 = intensities.x
+    self.error_diagonal = [1., 1., 1.]
+    # Get the covariance matrix
+    get_covar_from_LM = True
+    if get_covar_from_LM:
+      intensities.build_up()
+      upper = intensities.step_equations().normal_matrix_packed_u()
+      nm_elem = flex.double(9)
+      self.c = flex.double(3)
+      ctr = 0
+      for x in xrange(3):
+        x_0 = ctr
+        for y in xrange(2,x-1,-1):
+          nm_elem[ 3*x+y ] = upper[x_0+(y-x)]
+          ctr += 1
+          if x!= y:
+            nm_elem[ 3*y+x ] = upper[x_0+(y-x)]
+          else:
+            self.c[x]=upper[x_0+(y-x)]
+      NM = sqr(nm_elem)
+      #from IPython import embed; embed(); exit()
+#    self.helper.solve()
+    #print list(self.helper.step_equations().cholesky_factor_packed_u())
+#      from IPython import embed; embed()
+      error_matrix = NM.inverse()
+    #from IPython import embed; embed(); exit()
+      #print 'stdev from covariance matrix ', self.error_diagonal
     # Make sure sigma and tau are sensible after minimization. Should not blow up !!
     # This is highly controversial # FIXME 
     if sigma0 < 0.0 or tau0 < 0.0:
@@ -246,7 +274,7 @@ class mcmc_exgauss():
     from construct_random_datapt import ExGauss
     EXG= ExGauss(len(X1), np.min(X1), np.max(X1), mu0, sigma0, tau0)
     I_fit0 = EXG.find_x_from_iter(self.cdf_cutoff)
-#    print 'Initial from iter I_%.2f value = '%self.cdf_cutoff, I_fit0
+    print 'Initial from fit I_%.2f value = '%self.cdf_cutoff, I_fit0
     plt.figure(1)
     plt.plot(X1,Y1,'.')
     if (1):
@@ -254,7 +282,10 @@ class mcmc_exgauss():
       F1 = intensities.exgauss_cdf_array(X1,mu0, sigma0, tau0)
       F2 = intensities.exgauss_cdf_array(X1,-4000.0,4000.0, 25000.0)
 #    print 'Initial Sum Squared Difference = ',sum(map(lambda x:x*x,F0-Y1))
-    print 'Final Sum Squared Difference = ',sum(map(lambda x:x*x,F1-Y1))
+    residual = sum(map(lambda x:x*x,F1-Y1))
+    self.error_diagonal = [math.sqrt(residual*error_matrix(a,a)) for a in xrange(3)]
+    print ' From LevMar: 1./(df/da)*sqrt(residual) = ',self.error_diagonal
+    print 'Final Sum Squared Difference = ',residual
     plt.plot(X1, F0, 'r*', linewidth=2.0)
     plt.plot(X1,F1,'g+',linewidth=2)
     plt.ylabel('CDF value')
@@ -276,7 +307,7 @@ class mcmc_exgauss():
     mcmc_helper = mcmc()
     I_avg_ideal, I_var_ideal, accept_rate= mcmc_helper.sampler(X1, samples=self.nsteps, mu_init= mu0,sigma_init = sigma0, tau_init = tau0,
                    proposal_width = proposal_width, t_start = self.t_start, dt = self.dt,cdf_cutoff=self.cdf_cutoff,
-                   plot=False, analyse_mcmc = True, seed=self.mcmc_seed)
+                   plot=False, analyse_mcmc = True, seed=self.mcmc_seed, prior_errors = self.error_diagonal, residual=residual)
 #    mu,sigma, tau = params[-1]
     mu,sigma, tau = [mu0, sigma0, tau0]
 
@@ -328,5 +359,5 @@ class mcmc_exgauss():
 
 if __name__ == '__main__':
   import sys
-  mcmc_test = mcmc_exgauss(datasource=sys.argv[1], cdf_cutoff=0.95, nsteps=1000, t_start=100, dt=10, plot=True)
+  mcmc_test = mcmc_exgauss(datasource=sys.argv[1], cdf_cutoff=0.95, nsteps=1000, t_start=100, dt=50, plot=True)
   mcmc_test.run()

@@ -71,9 +71,9 @@ class ExGauss():
   def interpolate_x_value(self, y):
 #    return np.random.normal(1000., 10)
 #    if self.N < 20:
-#      lookup_table_cdf, lookup_table_x = self.create_exgauss_lookup_table()
+    lookup_table_cdf, lookup_table_x = self.create_exgauss_lookup_table()
 #    else:
-    lookup_table_cdf, lookup_table_x = self.create_smarter_lookup_table(y)
+    #lookup_table_cdf, lookup_table_x = self.create_smarter_lookup_table(y)
     lookup_table_cdf = flex.double(lookup_table_cdf)
 #    print 'Length of lookup table = ', len(lookup_table_cdf)
 #    del(lookup_table_cdf)

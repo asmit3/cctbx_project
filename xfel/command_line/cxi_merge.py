@@ -1155,23 +1155,23 @@ class scaling_manager (intensity_data) :
     self.summed_weight= flex.double(self.n_refl, 0.)
     self.summed_wt_I  = flex.double(self.n_refl, 0.)
     hkl_list = []
-#    I_stats = []
+    I_stats = []
     for hkl_id in xrange(self.n_refl):
       hkl = self.miller_set.indices()[hkl_id]
       if hkl not in self.ISIGI: continue
       hkl_list.append((hkl, hkl_id))
       # Only for debugging, single instance of do_work
-#      if hkl_id in [553]:
+      if hkl_id in [7]:
 #      if hkl_id in [553,2765,4940,5880,8839,9729,9807,10404,10539,10767,11499,14107,16261,16276]:
-#        I_stats.append((self.do_work((hkl, hkl_id))))
+        I_stats.append((self.do_work((hkl, hkl_id))))
     from libtbx import easy_mp
-    I_stats = easy_mp.parallel_map(
-      func = self.do_work,
-      iterable = hkl_list,
-      processes=48,
-      method='multiprocessing',
-      preserve_order=True,
-      preserve_exception_message=True)
+#    I_stats = easy_mp.parallel_map(
+#      func = self.do_work,
+#      iterable = hkl_list,
+#      processes=32,
+#      method='multiprocessing',
+#      preserve_order=True,
+#      preserve_exception_message=True)
 
     print 'After easy MP is done'
     for i in xrange(len(I_stats)): 
@@ -1191,7 +1191,7 @@ class scaling_manager (intensity_data) :
     if n > 1:
       try:
         mcmc_helper = mcmc_exgauss([self.ISIGI[hkl][i][0] for i in xrange(n)],cdf_cutoff=0.95, 
-                                   nsteps=5000, t_start=500, dt=10, plot=False)
+                                   nsteps=50, t_start=5, dt=10, plot=False)
         I_avg_ideal, I_var_ideal, accept_rate = mcmc_helper.run()
 ##        thinned_params = mcmc_helper.run()
 #        import pdb; pdb.set_trace()
