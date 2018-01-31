@@ -24,17 +24,11 @@ class mcmc():
 #    warnings.simplefilter("error", RuntimeWarning)
     ct = 0
     for x in data:
-      if (1.0-math.erf((sigma*sigma-tau*(x-mu)))) > 0.0 :
-        tmp_term= np.log(1./(2*tau))+((sigma*sigma-2.0*tau*(x-mu))/(2.0*tau*tau)) + np.log(1.0-math.erf((sigma*sigma-tau*(x-mu))/(sigma*tau*math.sqrt(2))))
-#        if np.isnan(tmp_term):
-#          sumofprob += -1000000000.0
-#          ct += 1
-#          continue
-#          from IPython import embed; embed(); exit()
-        sumofprob += tmp_term
-#    print 'what is copunt ??',ct
+      if math.erfc((sigma*sigma-tau*(x-mu))/(sigma*tau*math.sqrt(2))) == 0.0 :
+        return -np.inf 
+      tmp_term= np.log(1./(2*tau))+((sigma*sigma-2.0*tau*(x-mu))/(2.0*tau*tau)) + np.log(math.erfc((sigma*sigma-tau*(x-mu))/(sigma*tau*math.sqrt(2))))
+      sumofprob += tmp_term
     return sumofprob
-
 
   def gauss_cdf(self,x,mu,sigma):
 #    if sigma <= 0.0:
@@ -94,11 +88,7 @@ class mcmc():
     mu_current = mu_init
     sigma_current = sigma_init
     tau_current = tau_init
-    mu_alt, sigma_alt, tau_alt = self.initial_guess0(data, wiki_method=False)
-    # FIXME this is terrible but if the minimization fails, MCMC should still go on !!!
-    if (mu_alt == mu_init) and (sigma_alt == sigma_init) and (tau_alt == tau_init):
-      mu_alt, sigma_alt, tau_alt = self.initial_guess0(data, wiki_method=True)
-#
+#    dmu,dsigma,dtau = prior_errors 
     dmu,dsigma,dtau = self.get_error_estimate_of_params(residual, data, mu_init, sigma_init, tau_init)
 #    from IPython import embed; embed(); exit()
     mu_prior_mu = mu_init
@@ -114,11 +104,13 @@ class mcmc():
     I_mcmc = []
 #    print 'Starting likelihood, sd, and # of data pts = ', self.exgauss(data, mu_current, sigma_current, tau_current), mu_prior_sd, sd_prior_sd, tau_prior_sd, len(data)
     for i in range(samples):
+      accept = False
+      inf_flag = False
 #      print 'numstep = ',i
 # trial move
-      mu_proposal =  np.random.normal(mu_current,1.* mu_prior_sd/1.)
-      sigma_proposal = np.abs(np.random.normal(sigma_current, 1.*sd_prior_sd/1.)) #
-      tau_proposal = np.abs(np.random.normal(tau_current, 1.*tau_prior_sd/1.))
+      mu_proposal =  np.random.normal(mu_current,1.5* mu_prior_sd/1.)
+      sigma_proposal = np.abs(np.random.normal(sigma_current, 1.5*sd_prior_sd/1.)) #
+      tau_proposal = np.abs(np.random.normal(tau_current, 1.5*tau_prior_sd/1.))
       likelihood_current = self.exgauss(data,mu_current, sigma_current, tau_current) # multiply the probabilties
       likelihood_proposal = self.exgauss(data,mu_proposal,sigma_proposal, tau_proposal) # multiply
 
@@ -127,10 +119,14 @@ class mcmc():
       prior_proposal = self.gauss_pdf(mu_proposal, mu_prior_mu, mu_prior_sd)+self.gauss_pdf(sigma_proposal, sd_prior_mu, sd_prior_sd)+ \
                        self.gauss_pdf(tau_proposal, tau_prior_mu, tau_prior_sd)
 #               prior_proposal = np.log(norm(mu_prior_mu, mu_prior_sd).pdf(mu_proposal)*norm(sd_prior_mu, sd_prior_sd).pdf(sigma_proposal)*norm(tau_prior_mu, tau_prior_sd).pdf(tau_proposal)) #
-      p_current = likelihood_current+prior_current
-      p_proposal = likelihood_proposal+prior_proposal
-      p_accept = p_proposal- p_current
-      accept = np.log(np.random.rand()) < p_accept
+      if likelihood_proposal == -np.inf:
+        accept = False
+        inf_flag = True
+      if not accept and not inf_flag:
+        p_current = likelihood_current + prior_current
+        p_proposal = likelihood_proposal + prior_proposal
+        p_accept = p_proposal- p_current
+        accept = np.log(np.random.rand()) < p_accept
       if plot:
         plot_proposal(mu_current, mu_proposal, mu_prior_mu, mu_prior_sd, data, accept, posterior, i)
       if accept:
@@ -181,9 +177,10 @@ class mcmc():
 
     plt.figure(3)
     data = np.sort(data)
-    F1 = np.array(range(1,len(data)+1))/float(len(data))
-    F1[:] = [z-0.5/len(F1) for z in F1]
-    plt.plot(data, F1, '-*g', linewidth=3.0)
+    #F1 = np.array(range(1,len(data)+1))/float(len(data))
+    #F1[:] = [z-0.5/len(F1) for z in F1]
+    #F1 = self.exgauss_cdf_array(data,posterior[0][0], posterior[0][1], posterior[0][2])
+    #plt.plot(data, F1, '.', linewidth=3.0)
     for count in range(len(posterior)):
       F1 = self.exgauss_cdf_array(data,posterior[count][0], posterior[count][1], posterior[count][2])
       plt.plot(data, F1, 'grey')
@@ -191,6 +188,8 @@ class mcmc():
       I_95 = EXG.find_x_from_iter(cdf_cutoff)
       plt.plot(I_95,0.05,'r*')
 
+    F1 = self.exgauss_cdf_array(data,posterior[0][0], posterior[0][1], posterior[0][2])
+    plt.plot(data, F1, '.', linewidth=3.0)
     # c. 
     d_I_95_mcmc = [np.abs(x - I_95_exp) for x in I_mcmc] 
     print 'Average absolute deviation I_95 mcmc from experimental I_95', np.mean(d_I_95_mcmc)
@@ -265,12 +264,12 @@ class mcmc():
   def get_error_estimate_of_params(self, residual, data, mu0, sigma0,tau0):
     mu2grad,sigma2grad,tau2grad = self.get_residual2_grad(data, mu0, sigma0, tau0) 
     #mu2grad,sigma2grad,tau2grad = self.get_hessian(data, mu0, sigma0, tau0) 
-    #dmu = np.sqrt(1.0*residual/mu2grad/len(data))
-    #dsigma = np.sqrt(1.0*residual/sigma2grad/len(data))
-    #dtau = np.sqrt(1.0*residual/tau2grad/len(data))
-    dmu = np.sqrt(1.0/mu2grad/1.)
-    dsigma = np.sqrt(1.0/sigma2grad/1.)
-    dtau = np.sqrt(1.0/tau2grad/1.)
+    dmu = np.sqrt(1.0*residual/mu2grad/1.)
+    dsigma = np.sqrt(1.0*residual/sigma2grad/1.)
+    dtau = np.sqrt(1.0*residual/tau2grad/1.)
+#    dmu = np.sqrt(1.0/mu2grad/1.)
+#    dsigma = np.sqrt(1.0/sigma2grad/1.)
+#    dtau = np.sqrt(1.0/tau2grad/1.)
     print 'my errors = ',dmu,dsigma,dtau
     return dmu,dsigma,dtau
 

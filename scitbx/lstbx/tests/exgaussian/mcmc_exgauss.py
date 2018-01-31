@@ -286,8 +286,8 @@ class mcmc_exgauss():
     self.error_diagonal = [math.sqrt(residual*error_matrix(a,a)) for a in xrange(3)]
     print ' From LevMar: 1./(df/da)*sqrt(residual) = ',self.error_diagonal
     print 'Final Sum Squared Difference = ',residual
-    plt.plot(X1, F0, 'r*', linewidth=2.0)
-    plt.plot(X1,F1,'g+',linewidth=2)
+#    plt.plot(X1, F0, 'r*', linewidth=2.0) # Initial guess 
+    plt.plot(X1,F1,'g+',linewidth=2) # Best fit
     plt.ylabel('CDF value')
     plt.xlabel('Intensities')
     # Plot difference between obs and calc values
@@ -359,5 +359,5 @@ class mcmc_exgauss():
 
 if __name__ == '__main__':
   import sys
-  mcmc_test = mcmc_exgauss(datasource=sys.argv[1], cdf_cutoff=0.95, nsteps=1000, t_start=100, dt=50, plot=True)
+  mcmc_test = mcmc_exgauss(datasource=sys.argv[1], cdf_cutoff=0.95, nsteps=1000, t_start=500, dt=10, plot=True)
   mcmc_test.run()
