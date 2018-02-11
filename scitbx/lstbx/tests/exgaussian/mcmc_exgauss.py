@@ -275,26 +275,29 @@ class mcmc_exgauss():
     EXG= ExGauss(len(X1), np.min(X1), np.max(X1), mu0, sigma0, tau0)
     I_fit0 = EXG.find_x_from_iter(self.cdf_cutoff)
     print 'Initial from fit I_%.2f value = '%self.cdf_cutoff, I_fit0
-    plt.figure(1)
-    plt.plot(X1,Y1,'.')
+    if self.plot:
+      plt.figure(1)
+      plt.plot(X1,Y1,'.')
     if (1):
       F0 = intensities.exgauss_cdf_array(X1, initial[0], initial[1], initial[2])
       F1 = intensities.exgauss_cdf_array(X1,mu0, sigma0, tau0)
       F2 = intensities.exgauss_cdf_array(X1,-4000.0,4000.0, 25000.0)
 #    print 'Initial Sum Squared Difference = ',sum(map(lambda x:x*x,F0-Y1))
     residual = sum(map(lambda x:x*x,F1-Y1))
-    self.error_diagonal = [math.sqrt(residual*error_matrix(a,a)) for a in xrange(3)]
+    if get_covar_from_LM:
+      self.error_diagonal = [math.sqrt(residual*error_matrix(a,a)) for a in xrange(3)]
     print ' From LevMar: 1./(df/da)*sqrt(residual) = ',self.error_diagonal
     print 'Final Sum Squared Difference = ',residual
+    if self.plot:
 #    plt.plot(X1, F0, 'r*', linewidth=2.0) # Initial guess 
-    plt.plot(X1,F1,'g+',linewidth=2) # Best fit
-    plt.ylabel('CDF value')
-    plt.xlabel('Intensities')
+      plt.plot(X1,F1,'g+',linewidth=2) # Best fit
+      plt.ylabel('CDF value')
+      plt.xlabel('Intensities')
     # Plot difference between obs and calc values
-    plt.figure(2)
-    plt.plot(X1, (F1-Y1), 'o')
-    plt.ylabel('$\Delta(CDF_{calc}-CDF_{obs})$', fontsize=18)
-    plt.xlabel('Intensities', fontsize=18)
+      plt.figure(2)
+      plt.plot(X1, (F1-Y1), 'o')
+      plt.ylabel('$\Delta(CDF_{calc}-CDF_{obs})$', fontsize=18)
+      plt.xlabel('Intensities', fontsize=18)
 # Now do the MCMC stuff
     print '======================= MCMC stuff beginning ============================'
 #    nsteps = 5
@@ -307,7 +310,7 @@ class mcmc_exgauss():
     mcmc_helper = mcmc()
     I_avg_ideal, I_var_ideal, accept_rate= mcmc_helper.sampler(X1, samples=self.nsteps, mu_init= mu0,sigma_init = sigma0, tau_init = tau0,
                    proposal_width = proposal_width, t_start = self.t_start, dt = self.dt,cdf_cutoff=self.cdf_cutoff,
-                   plot=False, analyse_mcmc = True, seed=self.mcmc_seed, prior_errors = self.error_diagonal, residual=residual)
+                   plot=False, analyse_mcmc = False, seed=self.mcmc_seed, prior_errors = self.error_diagonal, residual=residual)
 #    mu,sigma, tau = params[-1]
     mu,sigma, tau = [mu0, sigma0, tau0]
 
@@ -359,5 +362,5 @@ class mcmc_exgauss():
 
 if __name__ == '__main__':
   import sys
-  mcmc_test = mcmc_exgauss(datasource=sys.argv[1], cdf_cutoff=0.95, nsteps=1000, t_start=500, dt=10, plot=True)
+  mcmc_test = mcmc_exgauss(datasource=sys.argv[1], cdf_cutoff=0.95, nsteps=100, t_start=10, dt=10, plot=True)
   mcmc_test.run()

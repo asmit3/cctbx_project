@@ -1155,23 +1155,33 @@ class scaling_manager (intensity_data) :
     self.summed_weight= flex.double(self.n_refl, 0.)
     self.summed_wt_I  = flex.double(self.n_refl, 0.)
     hkl_list = []
+    debug_mode = False
+    #if debug_mode:
     I_stats = []
     for hkl_id in xrange(self.n_refl):
       hkl = self.miller_set.indices()[hkl_id]
       if hkl not in self.ISIGI: continue
       hkl_list.append((hkl, hkl_id))
       # Only for debugging, single instance of do_work
-      if hkl_id in [7]:
+      if debug_mode:
+#      if hkl_id in [7]:
 #      if hkl_id in [553,2765,4940,5880,8839,9729,9807,10404,10539,10767,11499,14107,16261,16276]:
         I_stats.append((self.do_work((hkl, hkl_id))))
-    from libtbx import easy_mp
-#    I_stats = easy_mp.parallel_map(
-#      func = self.do_work,
-#      iterable = hkl_list,
-#      processes=32,
-#      method='multiprocessing',
-#      preserve_order=True,
-#      preserve_exception_message=True)
+    if not debug_mode:
+      from libtbx import easy_mp
+      for args,res,errstr in easy_mp.multi_core_run(
+        self.do_work,hkl_list,64):
+        print 'MPJOBARGS =',args,'MPJOBRESULTS=',res,'MPJOBERROR=',errstr
+        I_stats.append(res)
+      #from IPython import embed; embed(); exit()
+      #print args, errstr
+      #I_stats = easy_mp.parallel_map(
+      #  func = self.do_work,
+      #  iterable = hkl_list,
+      #  processes=56,
+      #  method='multiprocessing',
+      #  preserve_order=True,
+      #  preserve_exception_message=True)
 
     print 'After easy MP is done'
     for i in xrange(len(I_stats)): 
@@ -1180,26 +1190,33 @@ class scaling_manager (intensity_data) :
       self.summed_wt_I[I_stats[i][2]] = I_stats[i][0]
       self.summed_weight[I_stats[i][2]] = I_stats[i][1]
 
-  def do_work(self, item_list):
+  ##!!!def do_work(self, item_list):
+  def do_work(self, hkl, hkl_id):
     from scitbx.lstbx.tests.exgaussian.mcmc_exgauss import mcmc_exgauss
     import numpy as np
-    hkl, hkl_id = item_list
+    ##!!!hkl, hkl_id = item_list
     n = len(self.ISIGI[hkl])
     print 'HKL value = ', hkl, n, hkl_id
     I_avg_ideal = 0.0
     I_var_ideal = 1.0
+    summed_wt_I = 0.0
+    summed_weight = 0.0
     if n > 1:
       try:
         mcmc_helper = mcmc_exgauss([self.ISIGI[hkl][i][0] for i in xrange(n)],cdf_cutoff=0.95, 
-                                   nsteps=50, t_start=5, dt=10, plot=False)
+                                   nsteps=50000, t_start=20000, dt=10, plot=False)
         I_avg_ideal, I_var_ideal, accept_rate = mcmc_helper.run()
+        summed_wt_I = (I_avg_ideal/I_var_ideal)
+        summed_weight = 1./I_var_ideal
 ##        thinned_params = mcmc_helper.run()
 #        import pdb; pdb.set_trace()
         print 'accept rate for hkl value=',hkl, accept_rate, hkl_id
         if I_var_ideal < 0.1:
           print "variance is too low"
-          I_avg_ideal = np.mean([self.ISIGI[hkl][i][0] for i in xrange(n)])
-          I_var_ideal = np.var([self.ISIGI[hkl][i][0] for i in xrange(n)])
+          summed_wt_I = 0.0
+          summed_weight = 0.0
+          #I_avg_ideal = np.mean([self.ISIGI[hkl][i][0] for i in xrange(n)])
+          #I_var_ideal = np.var([self.ISIGI[hkl][i][0] for i in xrange(n)])
 #        I_avg_ideal = np.random.normal(10000., 100.)
 #        I_var_ideal = np.random.normal(100., 5.)
       except Exception,e:
@@ -1211,18 +1228,16 @@ class scaling_manager (intensity_data) :
 #        pdb.post_mortem(tb)
         print 'For some reason minimization/MCMC doesnt work', hkl_id
 #        try:
-#        I_avg_ideal = np.mean([self.ISIGI[hkl][i][0] for i in xrange(n)])
-#        I_var_ideal = np.var([self.ISIGI[hkl][i][0] for i in xrange(n)])
+        #I_avg_ideal = np.mean([self.ISIGI[hkl][i][0] for i in xrange(n)])
+        #I_var_ideal = np.var([self.ISIGI[hkl][i][0] for i in xrange(n)])
 #        except Exception,e:
 #          print 'HKL value that completely messes up', hkl,n
 #        np.random.seed()
-        I_avg_ideal = np.random.normal(10000., 100.)
-        I_var_ideal = np.random.normal(100., 5.)
+#        I_avg_ideal = np.random.normal(10000., 100.)
+#        I_var_ideal = np.random.normal(100., 5.)
       # This part needs some thought. Currently I am using what Neutze did and printing out variances
       # that will be used as it is to get stdev i.e stdev = sqrt(variance) in SigI_all
       # However if you look errors_from_residuals(), stdev = sqrt(variance/N) in SigI_all
-    summed_wt_I = (I_avg_ideal/I_var_ideal)
-    summed_weight = 1./I_var_ideal
 #    if np.isnan(summed_wt_I):
 #      from IPython import embed; embed(); exit()
 #      self.summed_wt_I[hkl_id] = np.random.normal(10000., 100.) #(I_avg_ideal/I_var_ideal)
@@ -1959,7 +1974,7 @@ Pred. Multiplicity = # predictions on all accepted images / # Miller indices the
   # stuff related to mcmc here, should be commented when using normal code
   from libtbx import easy_pickle
   # This is the part where you can print out reflection intensities
-#  easy_pickle.dump('merged_images.pickle', scaler.ISIGI)
+  #easy_pickle.dump('merged_images.pickle', scaler.ISIGI)
   #
   #
   mtz_file, miller_array = scaler.finalize_and_save_data()

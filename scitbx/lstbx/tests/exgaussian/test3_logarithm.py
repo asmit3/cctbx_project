@@ -24,6 +24,7 @@ class mcmc():
 #    warnings.simplefilter("error", RuntimeWarning)
     ct = 0
     for x in data:
+      #from IPython import embed; embed(); exit()
       if math.erfc((sigma*sigma-tau*(x-mu))/(sigma*tau*math.sqrt(2))) == 0.0 :
         return -np.inf 
       tmp_term= np.log(1./(2*tau))+((sigma*sigma-2.0*tau*(x-mu))/(2.0*tau*tau)) + np.log(math.erfc((sigma*sigma-tau*(x-mu))/(sigma*tau*math.sqrt(2))))
@@ -102,15 +103,17 @@ class mcmc():
     posterior = [[mu_current,sigma_current, tau_current]]
 
     I_mcmc = []
+    proposal_factor = 1.0
 #    print 'Starting likelihood, sd, and # of data pts = ', self.exgauss(data, mu_current, sigma_current, tau_current), mu_prior_sd, sd_prior_sd, tau_prior_sd, len(data)
     for i in range(samples):
       accept = False
       inf_flag = False
 #      print 'numstep = ',i
 # trial move
-      mu_proposal =  np.random.normal(mu_current,1.5* mu_prior_sd/1.)
-      sigma_proposal = np.abs(np.random.normal(sigma_current, 1.5*sd_prior_sd/1.)) #
-      tau_proposal = np.abs(np.random.normal(tau_current, 1.5*tau_prior_sd/1.))
+      mu_proposal =  np.random.normal(mu_current,proposal_factor* mu_prior_sd/1.)
+      sigma_proposal = np.abs(np.random.normal(sigma_current, proposal_factor*sd_prior_sd/1.)) #
+      tau_proposal = np.abs(np.random.normal(tau_current, proposal_factor*tau_prior_sd/1.))
+
       likelihood_current = self.exgauss(data,mu_current, sigma_current, tau_current) # multiply the probabilties
       likelihood_proposal = self.exgauss(data,mu_proposal,sigma_proposal, tau_proposal) # multiply
 
@@ -119,6 +122,7 @@ class mcmc():
       prior_proposal = self.gauss_pdf(mu_proposal, mu_prior_mu, mu_prior_sd)+self.gauss_pdf(sigma_proposal, sd_prior_mu, sd_prior_sd)+ \
                        self.gauss_pdf(tau_proposal, tau_prior_mu, tau_prior_sd)
 #               prior_proposal = np.log(norm(mu_prior_mu, mu_prior_sd).pdf(mu_proposal)*norm(sd_prior_mu, sd_prior_sd).pdf(sigma_proposal)*norm(tau_prior_mu, tau_prior_sd).pdf(tau_proposal)) #
+      #print 'DEBUG', likelihood_proposal, likelihood_current, prior_current,prior_proposal
       if likelihood_proposal == -np.inf:
         accept = False
         inf_flag = True
@@ -137,7 +141,14 @@ class mcmc():
       if i > t_start and i%dt:
         EXG= ExGauss(10000, minI, maxI, mu_current,sigma_current,tau_current)
         #from IPython import embed; embed(); exit()
-        I_mcmc.append(EXG.find_x_from_iter(cdf_cutoff))
+#        I_95_temp = np.random.normal(100000., 1000.)
+        I_ideal_temp = EXG.find_x_from_iter(cdf_cutoff)
+#        N_terms = 1.0*(samples-t_start)/dt
+#        I_mcmc_avg += I_95_temp/(N_terms)
+#        I_mcmc_2avg += (I_95_temp*I_95_temp)/(N_terms)
+        
+#        if analyse_mcmc:
+        I_mcmc.append(I_ideal_temp)
         #I_mcmc.append(EXG.interpolate_x_value(cdf_cutoff))
         del(EXG)
         if analyse_mcmc:
@@ -146,9 +157,13 @@ class mcmc():
 #    print 'accept rate = %4.3f, mu_prior_sd = %12.3f, sd_prior_sd= %12.3f, tau_prior_sd= %12.3f len(d) = %6d'%(accept_counter*1.0/samples, mu_prior_sd, sd_prior_sd, tau_prior_sd, len(data)) 
 #    return np.random.normal(1000., 10.), np.random.normal(100., 5.)
     print 'acceptance rate',accept_counter*1.0/samples
+    I_mcmc_avg =  np.mean(I_mcmc)
+    I_mcmc_var =  np.var(I_mcmc)
+#!!    I_mcmc_var =  I_mcmc_2avg - I_mcmc_avg*I_mcmc_avg #np.var(I_mcmc)
+    del(I_mcmc)
     if analyse_mcmc:
       self.mcmc_statistics(posterior,I_mcmc,data, cdf_cutoff)
-    return np.mean(I_mcmc), np.var(I_mcmc), accept_counter*1.0/samples
+    return I_mcmc_avg, I_mcmc_var, accept_counter*1.0/samples
 #    return posterior
 
   def mcmc_statistics(self, posterior, I_mcmc, data, cdf_cutoff):
