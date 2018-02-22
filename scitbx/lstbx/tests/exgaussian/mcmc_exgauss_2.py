@@ -7,7 +7,6 @@ import math
 import numpy as np
 from test3_logarithm import mcmc
 from scitbx.matrix import sqr
-from scitbx.examples.exgaussian.lbfgs_exgauss_helper import lbfgs_exgauss 
 
 class exgauss_fit(
   normal_eqns.non_linear_ls,
@@ -27,18 +26,7 @@ class exgauss_fit(
     # a. datasource is a filename
     # b. datasource is an flex array or a list or a numpy array
     self.t, self.y = self.read_data(datasource) #0.02*flex.double_range(1, self.n_data + 1)
-    initial_lbfgs = True
-    if initial_lbfgs:
-      try:
-        w_obs = [1.0 for elem in self.t]
-        initial = self.initial_guess()
-        fit = lbfgs_exgauss(self.t,self.y,w_obs,initial)
-        self.x_0 = fit.a
-      except:
-       print 'LBFGS failed'
-       self.x_0 = self.initial_guess()
-    else:
-      self.x_0 = self.initial_guess()
+    self.x_0 = self.initial_guess()
     assert len(self.y) == len(self.t)
     self.n_data = len(self.t)
     self.restart()
@@ -88,15 +76,8 @@ class exgauss_fit(
     #t = (t-np.min(t))
     #t = t/(np.max(t)-np.min(t))
     #t = (t-np.min(t))/(np.max(t)-np.min(t))
-    # See if there are any outliers with very negative intensity values
-    check_outlier = True
     if (not is_fake_exgauss):
       t = np.sort(t)
-      if check_outlier:
-        avg_t = np.mean(t[1:]) 
-        std_t = np.std(t[1:])
-        if t[0] < avg_t - 5.0*std_t:
-          t = t[1:]
       y = np.array(range(1,len(t)+1))/float(len(t))
       y[:] = [z-0.5/len(y) for z in y]
 
@@ -122,9 +103,8 @@ class exgauss_fit(
 #    return flex.double([-1.250959e+05, 5.06495e+02, 9.31455e+05])
 #    print 'INITIAL GUESS = ',mu, sigma, tau
 #    return flex.double([4776.3, 14940.1, 89784.6])
-#    return flex.double([-1000., 4300., 5800.])
-#    return flex.double([-63000., 197691., 165280.])
-#    return flex.double([14000., 43000., 20000.])
+#    return flex.double([45467., 67392., 35144.])
+    return flex.double([-10862378.3, 20005436.8, 13288876.4])
     return flex.double([mu,sigma,tau])
 
 
@@ -389,5 +369,5 @@ class mcmc_exgauss():
 
 if __name__ == '__main__':
   import sys
-  mcmc_test = mcmc_exgauss(datasource=sys.argv[1], cdf_cutoff=0.95, nsteps=1000, t_start=100, dt=100, plot=True)
+  mcmc_test = mcmc_exgauss(datasource=sys.argv[1], cdf_cutoff=0.95, nsteps=30, t_start=10, dt=10, plot=True)
   mcmc_test.run()

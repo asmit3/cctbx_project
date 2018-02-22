@@ -160,9 +160,9 @@ class mcmc():
     I_mcmc_avg =  np.mean(I_mcmc)
     I_mcmc_var =  np.var(I_mcmc)
 #!!    I_mcmc_var =  I_mcmc_2avg - I_mcmc_avg*I_mcmc_avg #np.var(I_mcmc)
-    del(I_mcmc)
     if analyse_mcmc:
       self.mcmc_statistics(posterior,I_mcmc,data, cdf_cutoff)
+    del(I_mcmc)
     return I_mcmc_avg, I_mcmc_var, accept_counter*1.0/samples
 #    return posterior
 
@@ -192,10 +192,10 @@ class mcmc():
 
     plt.figure(3)
     data = np.sort(data)
-    #F1 = np.array(range(1,len(data)+1))/float(len(data))
-    #F1[:] = [z-0.5/len(F1) for z in F1]
-    #F1 = self.exgauss_cdf_array(data,posterior[0][0], posterior[0][1], posterior[0][2])
-    #plt.plot(data, F1, '.', linewidth=3.0)
+    F1 = np.array(range(1,len(data)+1))/float(len(data))
+    F1[:] = [z-0.5/len(F1) for z in F1] # Actual Data
+    #F1 = self.exgauss_cdf_array(data,posterior[0][0], posterior[0][1], posterior[0][2]) # Best fit from minimization
+    plt.plot(data, F1, '.', linewidth=3.0)
     for count in range(len(posterior)):
       F1 = self.exgauss_cdf_array(data,posterior[count][0], posterior[count][1], posterior[count][2])
       plt.plot(data, F1, 'grey')
@@ -204,7 +204,7 @@ class mcmc():
       plt.plot(I_95,0.05,'r*')
 
     F1 = self.exgauss_cdf_array(data,posterior[0][0], posterior[0][1], posterior[0][2])
-    plt.plot(data, F1, '.', linewidth=3.0)
+    plt.plot(data, F1, 'g+', linewidth=3.0)
     # c. 
     d_I_95_mcmc = [np.abs(x - I_95_exp) for x in I_mcmc] 
     print 'Average absolute deviation I_95 mcmc from experimental I_95', np.mean(d_I_95_mcmc)
@@ -279,9 +279,13 @@ class mcmc():
   def get_error_estimate_of_params(self, residual, data, mu0, sigma0,tau0):
     mu2grad,sigma2grad,tau2grad = self.get_residual2_grad(data, mu0, sigma0, tau0) 
     #mu2grad,sigma2grad,tau2grad = self.get_hessian(data, mu0, sigma0, tau0) 
-    dmu = np.sqrt(1.0*residual/mu2grad/1.)
-    dsigma = np.sqrt(1.0*residual/sigma2grad/1.)
-    dtau = np.sqrt(1.0*residual/tau2grad/1.)
+    dmu,dsigma,dtau=mu0,sigma0,tau0 # error ~ O(value of params) as first guess
+    if mu2grad != 0.:
+      dmu = np.sqrt(1.0*residual/mu2grad/1.)
+    if sigma2grad != 0.:
+      dsigma = np.sqrt(1.0*residual/sigma2grad/1.)
+    if tau2grad != 0.:
+      dtau = np.sqrt(1.0*residual/tau2grad/1.)
 #    dmu = np.sqrt(1.0/mu2grad/1.)
 #    dsigma = np.sqrt(1.0/sigma2grad/1.)
 #    dtau = np.sqrt(1.0/tau2grad/1.)

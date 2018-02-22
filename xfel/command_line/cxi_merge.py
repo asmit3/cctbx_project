@@ -1164,9 +1164,10 @@ class scaling_manager (intensity_data) :
       hkl_list.append((hkl, hkl_id))
       # Only for debugging, single instance of do_work
       if debug_mode:
-#      if hkl_id in [7]:
+        if hkl_id in [553, 11499]:
 #      if hkl_id in [553,2765,4940,5880,8839,9729,9807,10404,10539,10767,11499,14107,16261,16276]:
-        I_stats.append((self.do_work((hkl, hkl_id))))
+#          I_stats.append((self.do_work((hkl, hkl_id)))) # For parallel_map
+          I_stats.append((self.do_work(self.miller_set.indices()[hkl_id], hkl_id)))    # multi_core_run
     if not debug_mode:
       from libtbx import easy_mp
       for args,res,errstr in easy_mp.multi_core_run(
@@ -1201,10 +1202,12 @@ class scaling_manager (intensity_data) :
     I_var_ideal = 1.0
     summed_wt_I = 0.0
     summed_weight = 0.0
-    if n > 1:
+    if n > 9:
       try:
-        mcmc_helper = mcmc_exgauss([self.ISIGI[hkl][i][0] for i in xrange(n)],cdf_cutoff=0.95, 
-                                   nsteps=50000, t_start=20000, dt=10, plot=False)
+        #mcmc_helper = mcmc_exgauss([self.ISIGI[hkl][i][0] for i in xrange(n)],cdf_cutoff=0.95, 
+        #                           nsteps=40000, t_start=10000, dt=1000, plot=False)
+        mcmc_helper = mcmc_exgauss([self.ISIGI[hkl][i][0]*self.ISIGI[hkl][i][2] for i in xrange(n)],cdf_cutoff=0.95, 
+                                   nsteps=40000, t_start=10000, dt=1000, plot=False)
         I_avg_ideal, I_var_ideal, accept_rate = mcmc_helper.run()
         summed_wt_I = (I_avg_ideal/I_var_ideal)
         summed_weight = 1./I_var_ideal
@@ -1611,6 +1614,7 @@ class scaling_manager (intensity_data) :
     #   miller_indices_unique=indices_to_edge,
     #   miller_indices=observations_original_index.indices())
 
+    #assert False
     use_weights = False # New facility for getting variance-weighted correlation
     if self.params.scaling.algorithm in ['mark1','levmar']:
       # Because no correlation is computed, the correlation
@@ -1638,6 +1642,8 @@ class scaling_manager (intensity_data) :
       sum_y = 0
       sum_w = 0.
 
+#      _all_ref = flex.double()
+#      _all_obs = flex.double()
       for pair in matches.pairs():
         if self.params.scaling.simulation is not None:
           observations.data()[pair[1]] = self.i_model.data()[pair[0]]     # SIM
@@ -1658,6 +1664,8 @@ class scaling_manager (intensity_data) :
 
         I_r = self.i_model.data()[pair[0]]
         I_o = observations.data()[pair[1]]
+#        _all_ref.append(I_r)
+#        _all_obs.append(I_o)
         sum_xx += I_w * I_r**2
         sum_yy += I_w * I_o**2
         sum_xy += I_w * I_r * I_o
