@@ -5,14 +5,12 @@ try: import gzip
 except ImportError: gzip = None
 try: import bz2
 except ImportError: bz2 = None
-try:
-  import hashlib
-  hashlib_md5 = hashlib.md5
-except ImportError:
-  import md5
-  hashlib_md5 = md5.new
-from stdlib import math
+import hashlib
 import warnings
+
+hashlib_md5 = hashlib.md5
+
+import math
 import shutil
 import glob
 import time
@@ -295,7 +293,7 @@ def warn_if_unexpected_md5_hexdigest(
   bool
       False if md5 hash of file does not appear in expected_md5_hexdigests.
   """
-  m = hashlib_md5()
+  m = hashlib.md5()
   m.update("\n".join(open(path).read().splitlines()))
   current_md5_hexdigest = m.hexdigest()
   if (m.hexdigest() in expected_md5_hexdigests): return False
@@ -320,12 +318,12 @@ def md5_hexdigest(filename=None, blocksize=256):
       The file is read by chunks of `blocksize` MB.
   """
   blocksize *= 1024**2
-  m = hashlib_md5()
-  f = open(filename, 'rb')
-  buf = f.read(blocksize)
-  while buf:
-    m.update(buf)
+  m = hashlib.md5()
+  with open(filename, 'rb') as f:
     buf = f.read(blocksize)
+    while buf:
+      m.update(buf)
+      buf = f.read(blocksize)
   return m.hexdigest()
 
 def get_memory_from_string(mem_str):
@@ -2381,3 +2379,49 @@ def to_str(text, codec=None):
     return str(text)
   else:
     return None
+
+def guess_total_memory(meminfo_file='/proc/meminfo'):
+  if (sys.platform == 'win32'):
+    ps = subprocess.Popen(['wmic','OS','get','TotalVisibleMemorySize', '/Value'],
+     stdout=subprocess.PIPE).communicate()[0]
+    mem = float(ps.split("=")[1].strip())
+    return mem # trivially easy on Windows
+
+  elif (sys.platform=='darwin'):
+    # Copied from https://apple.stackexchange.com/questions/4286/is-there-a-mac-os-x-terminal-version-of-the-free-command-in-linux-systems
+    import subprocess
+    import re
+    # Get process info
+    ps = subprocess.Popen(['ps', '-caxm', '-orss,comm'],
+       stdout=subprocess.PIPE).communicate()[0].decode()
+
+    # Iterate processes
+    processLines = ps.split('\n')
+    sep = re.compile('[\s]+')
+    rssTotal = 0 # kB
+    for row in range(1,len(processLines)):
+        rowText = processLines[row].strip()
+        rowElements = sep.split(rowText)
+        try:
+            rss = float(rowElements[0]) * 1024
+        except Exception,e:
+            rss = 0 # ignore...
+        rssTotal += rss
+
+    return rssTotal
+
+  elif os.path.isfile(meminfo_file):
+    for line in open(meminfo_file).readlines():
+      if line.lower().startswith("memtotal"):
+        spl=line.split()
+        if len(spl)!=3:
+          return None
+        try:
+          mem=int(spl[1])
+        except Exception,e:
+          return None
+        if spl[2].lower()=='kb':
+          mem=mem*1024
+        elif spl[2].lwer()=='mb':
+          mem=mem*1024*1024
+        return mem

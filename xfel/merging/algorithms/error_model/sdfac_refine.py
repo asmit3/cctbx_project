@@ -1,17 +1,30 @@
 from __future__ import division
 from scitbx.array_family import flex
-import math
+import math, sys
 
 from xfel.merging.algorithms.error_model.error_modeler_base import error_modeler_base
+from xfel import compute_normalized_deviations, apply_sd_error_params
+
+from xfel.cxi.postrefinement_legacy_rs import unpack_base
+class sdfac_parameterization(unpack_base):
+  def __getattr__(YY,item):
+    if item=="SDFAC" : return YY.reference[0]
+    if item=="SDB"   : return YY.reference[1]
+    if item=="SDADD" : return YY.reference[2]
+    if item=="SDFACSQ" : return YY.reference[0]**2
+    if item=="SDBSQ"   : return YY.reference[1]**2
+    if item=="SDADDSQ" : return YY.reference[2]**2
+    raise AttributeError(item)
+
+  def show(YY, out):
+    print >> out, "sdfac: %8.5f, sdb: %8.5f, sdadd: %8.5f"%(YY.SDFAC, YY.SDB, YY.SDADD)
 
 from scitbx.simplex import simplex_opt
 class simplex_minimizer(object):
   """Class for refining sdfac, sdb and sdadd"""
-  def __init__(self, sdfac, sdb, sdadd, data, indices, bins, seed = None, log=None):
+  def __init__(self, values, parameterization, data, indices, bins, seed = None, log=None):
     """
-    @param sdfac Initial value for sdfac
-    @param sdfac Initial value for sdfac
-    @param sdfac Initial value for sdfac
+    @param values parameterization of the SD terms
     @param data ISIGI dictionary of unmerged intensities
     @param indices array of miller indices to refine against
     @param bins array of flex.bool object specifying the bins to use to calculate the functional
@@ -23,8 +36,9 @@ class simplex_minimizer(object):
     self.data = data
     self.intensity_bin_selections = bins
     self.indices = indices
+    self.parameterization = parameterization
     self.n = 3
-    self.x = flex.double([sdfac, sdb, sdadd])
+    self.x = flex.double([values.SDFAC, values.SDB, values.SDADD])
     self.starting_simplex = []
     if seed is None:
       random_func = flex.random_double
@@ -46,14 +60,13 @@ class simplex_minimizer(object):
     """ Compute the functional by first applying the current values for the sd parameters
     to the input data, then computing the complete set of normalized deviations and finally
     using those normalized deviations to compute the functional."""
-    from xfel import compute_normalized_deviations, apply_sd_error_params
 
-    sdfac, sdb, sdadd = vector
+    values = self.parameterization(vector)
 
-    if sdfac < 0 or sdb < 0 or sdadd < 0:
+    if values.SDFAC < 0 or values.SDB < 0 or values.SDADD < 0:
       f = 1e6
     else:
-      data = apply_sd_error_params(self.data, sdfac, sdb, sdadd)
+      data = self.apply_sd_error_params(self.data, values)
       all_sigmas_normalized = compute_normalized_deviations(data, self.indices)
 
       f = 0
@@ -66,10 +79,21 @@ class simplex_minimizer(object):
         # functional is weight * (1-rms(normalized_sigmas))^s summed over all intensitiy bins
         f += w * ((1-math.sqrt(flex.mean(binned_normalized_sigmas*binned_normalized_sigmas)))**2)
 
-    print >> self.log, "f: % 12.1f, sdfac: %8.5f, sdb: %8.5f, sdadd: %8.5f"%(f, sdfac, sdb, sdadd)
+    print >> self.log, "f: % 12.1f,"%f,
+    values.show(self.log)
     return f
 
+  def apply_sd_error_params(self, data, values):
+    return apply_sd_error_params(data, values.SDFAC, values.SDB, values.SDADD)
+
+  def get_refined_params(self):
+    return self.parameterization(self.x)
+
 class sdfac_refine(error_modeler_base):
+  def __init__(self, scaler):
+    error_modeler_base.__init__(self, scaler)
+    self.parameterization = sdfac_parameterization
+
   def get_overall_correlation_flex (self, data_a, data_b) :
     """
     Correlate any two sets of data.
@@ -138,13 +162,27 @@ class sdfac_refine(error_modeler_base):
 
     if plot:
       from matplotlib import pyplot as plt
-      x = np.linspace(-500,500,100) # 100 linearly spaced numbers
+      lim = -5, 5
+      x = np.linspace(lim[0],lim[1],100) # 100 linearly spaced numbers
       y = slope * x + offset
-      plt.scatter(sorted_data, rankits)
+      plt.plot(sorted_data, rankits, '-')
       plt.plot(x,y)
+      plt.title("Rankits vs sorted data")
+      plt.xlabel("Sorted data")
+      plt.ylabel("Rankits")
+      plt.xlim(lim); plt.ylim(lim)
+      plt.axes().set_aspect('equal')
 
       plt.figure()
+      plt.title("Rankits")
+      plt.xlabel("")
+      plt.ylabel("Count")
       plt.hist(rankits, bins=100)
+      plt.figure()
+      plt.xlabel("")
+      plt.ylabel("Count")
+      plt.title("Data")
+      plt.hist(sorted_data, bins=100)
       plt.show()
 
     return corr, slope, offset
@@ -157,14 +195,14 @@ class sdfac_refine(error_modeler_base):
     all_sigmas_normalized = compute_normalized_deviations(self.scaler.ISIGI, self.scaler.miller_set.indices())
     assert ((all_sigmas_normalized > 0) | (all_sigmas_normalized <= 0)).count(True) == len(all_sigmas_normalized) # no nans allowed
 
+    # remove zeros (miller indices with only one observation will have a normalized deviation of 0 which shouldn't contribute to
+    # the normal probability plot analysis and initial parameter estimation
+    all_sigmas_normalized = all_sigmas_normalized.select(all_sigmas_normalized != 0)
+
     corr, slope, offset = self.normal_probability_plot(all_sigmas_normalized, (-0.5, 0.5))
     sdfac = slope
-    sdb = 0
-
-    if self.scaler.params.raw_data.error_models.sdfac_refine.target_function == 'original':
-      sdadd = offset
-    elif self.scaler.params.raw_data.error_models.sdfac_refine.target_function == 'squared':
-      sdadd = math.sqrt(offset)
+    sdadd = offset
+    sdb = math.sqrt(sdadd)
 
     return sdfac, sdb, sdadd
 
@@ -208,27 +246,29 @@ class sdfac_refine(error_modeler_base):
 
     return sels, binned_intensities
 
+  def run_minimzer(self, values, sels, **kwargs):
+    return simplex_minimizer(values, self.parameterization, self.scaler.ISIGI, self.scaler.miller_set.indices(), sels, kwargs['seed'], self.log)
+
   def adjust_errors(self):
     """
     Adjust sigmas according to Evans, 2011 Acta D and Evans and Murshudov, 2013 Acta D
     """
     print >> self.log, "Starting adjust_errors"
     print >> self.log, "Computing initial estimates of sdfac, sdb and sdadd"
-    sdfac, sdb, sdadd = self.get_initial_sdparams_estimates()
+    values = self.parameterization(flex.double(self.get_initial_sdparams_estimates()))
 
-    print >> self.log, "Initial estimates:", sdfac, sdb, sdadd
-
-    from xfel import compute_normalized_deviations, apply_sd_error_params
-
+    print >> self.log, "Initial estimates:",
+    values.show(self.log)
     print >> self.log, "Refining error correction parameters sdfac, sdb, and sdadd"
     sels, binned_intensities = self.get_binned_intensities()
     seed = self.scaler.params.raw_data.error_models.sdfac_refine.random_seed
-    minimizer = simplex_minimizer(sdfac, sdb, sdadd, self.scaler.ISIGI, self.scaler.miller_set.indices(), sels, seed, self.log)
-    sdfac, sdb, sdadd = minimizer.x
-    print >> self.log, "Final sdadd: %8.5f, sdb: %8.5f, sdadd: %8.5f"%(sdfac, sdb, sdadd)
+    minimizer = self.run_minimzer(values, sels, seed=seed)
+    values = minimizer.get_refined_params()
+    print >> self.log, "Final",
+    values.show(self.log)
 
     print >> self.log, "Applying sdfac/sdb/sdadd 1"
-    self.scaler.ISIGI = apply_sd_error_params(self.scaler.ISIGI, sdfac, sdb, sdadd)
+    self.scaler.ISIGI = minimizer.apply_sd_error_params(self.scaler.ISIGI, values)
 
     self.scaler.summed_weight= flex.double(self.scaler.n_refl, 0.)
     self.scaler.summed_wt_I  = flex.double(self.scaler.n_refl, 0.)
@@ -252,6 +292,7 @@ class sdfac_refine(error_modeler_base):
       print >> self.log, "Validating"
       from matplotlib import pyplot as plt
       all_sigmas_normalized = compute_normalized_deviations(self.scaler.ISIGI, self.scaler.miller_set.indices())
+
       plt.hist(all_sigmas_normalized, bins=100)
       plt.figure()
 
@@ -263,59 +304,55 @@ class sdfac_refine(error_modeler_base):
       plt.plot(binned_intensities, binned_rms_normalized_sigmas, 'o')
       plt.show()
 
+      all_sigmas_normalized = all_sigmas_normalized.select(all_sigmas_normalized != 0)
       self.normal_probability_plot(all_sigmas_normalized, (-0.5, 0.5), plot = True)
 
-class simplex_minimizer_refltable(object):
+
+def setup_isigi_stats(ISIGI, indices):
+  """ Jiffy function to compute statistics needed downstream
+  For every observstion, computes:
+  mean_scaled_intensity: mean of all observations of this miller index
+  meanprime_scaled_intensity: mean of all observations of this miller index except this observation
+  n_refl: count of observed reflections for this miller index
+  nn: n_refl-1/n_refl
+  """
+  sumI = flex.double(len(indices), 0)
+  n_refl = flex.double(len(indices), 0)
+  for i in xrange(len(ISIGI)):
+    hkl_id = ISIGI['miller_id'][i]
+    sumI[hkl_id] += ISIGI['scaled_intensity'][i]
+    n_refl[hkl_id] += 1
+
+  all_meanI = flex.double(len(ISIGI), 0)
+  all_n_refl = flex.double(len(ISIGI), 0)
+  all_imeanprime = flex.double(len(ISIGI), 0)
+  for i in xrange(len(ISIGI)):
+    hkl_id = ISIGI['miller_id'][i]
+    all_meanI[i] = sumI[hkl_id]/n_refl[hkl_id]
+    all_n_refl[i] = n_refl[hkl_id]
+    assert n_refl[hkl_id] > 0
+    if n_refl[hkl_id] > 1:
+      all_imeanprime[i] = (sumI[hkl_id]-ISIGI['scaled_intensity'][i])/(n_refl[hkl_id]-1)
+  ISIGI['mean_scaled_intensity'] = all_meanI
+  ISIGI['n_refl'] = all_n_refl
+  ISIGI['nn'] = (all_n_refl - 1)/all_n_refl
+  ISIGI['meanprime_scaled_intensity'] = all_imeanprime
+
+class simplex_minimizer_refltable(simplex_minimizer):
   """Class for refining sdfac, sdb and sdadd"""
-  def __init__(self, sdfac, sdb, sdadd, data, indices, bins, seed = None, log = None, squared = False):
-    """
-    @param sdfac Initial value for sdfac
-    @param sdfac Initial value for sdfac
-    @param sdfac Initial value for sdfac
-    @param data ISIGI dictionary of unmerged intensities
-    @param indices array of miller indices to refine against
-    @param bins array of flex.bool object specifying the bins to use to calculate the functional
-    @param log Log to print to (none for stdout)
-    """
-    if log is None:
-      log = sys.stdout
-    self.log = log
-    self.data = data
-    self.intensity_bin_selections = bins
-    self.indices = indices
-    self.squared = squared
-    self.n = 3
-    self.x = flex.double([sdfac, sdb, sdadd])
-    self.starting_simplex = []
-    if seed is None:
-      random_func = flex.random_double
-    else:
-      print >> self.log, "Using random seed %d"%seed
-      mt = flex.mersenne_twister(seed)
-      random_func = mt.random_double
-
-    for i in xrange(self.n+1):
-      self.starting_simplex.append(random_func(self.n))
-
-    self.optimizer = simplex_opt( dimension = self.n,
-                                  matrix    = self.starting_simplex,
-                                  evaluator = self,
-                                  tolerance = 1e-1)
-    self.x = self.optimizer.get_solution()
 
   def target(self, vector):
     """ Compute the functional by first applying the current values for the sd parameters
     to the input data, then computing the complete set of normalized deviations and finally
     using those normalized deviations to compute the functional."""
-    from xfel import compute_normalized_deviations, apply_sd_error_params
+    values = self.parameterization(vector)
 
-    sdfac, sdb, sdadd = vector
-
-    if sdfac < 0 or sdb < 0 or sdadd < 0:
+    if values.SDFAC < 0 or values.SDB < 0 or values.SDADD < 0:
       f = 1e6
     else:
       orig_isigi = self.data['isigi'] * 1
-      apply_sd_error_params(self.data, sdfac, sdb, sdadd, self.squared)
+
+      self.apply_sd_error_params(self.data, values)
       all_sigmas_normalized = compute_normalized_deviations(self.data, self.indices)
       self.data['isigi'] = orig_isigi
 
@@ -329,8 +366,12 @@ class simplex_minimizer_refltable(object):
         # functional is weight * (1-rms(normalized_sigmas))^s summed over all intensitiy bins
         f += w * ((1-math.sqrt(flex.mean(binned_normalized_sigmas*binned_normalized_sigmas)))**2)
 
-    print >> self.log, "f: % 12.1f, sdfac: %8.5f, sdb: %8.5f, sdadd: %8.5f"%(f, sdfac, sdb, sdadd)
+    print >> self.log, "f: % 12.1f,"%f,
+    values.show(self.log)
     return f
+
+  def apply_sd_error_params(self, data, values):
+    apply_sd_error_params(data, values.SDFAC, values.SDB, values.SDADD, False)
 
 class sdfac_refine_refltable(sdfac_refine):
   def get_binned_intensities(self, n_bins=100):
@@ -345,20 +386,8 @@ class sdfac_refine_refltable(sdfac_refine):
     """
     print >> self.log, "Computing intensity bins.",
     ISIGI = self.scaler.ISIGI
-    sumI = flex.double(len(self.scaler.miller_set.indices()), 0)
-    n_refl = flex.double(len(self.scaler.miller_set.indices()), 0)
-    for i in xrange(len(ISIGI)):
-      hkl_id = ISIGI['miller_id'][i]
-      sumI[hkl_id] += ISIGI['scaled_intensity'][i]
-      n_refl[hkl_id] += 1
-    sel = n_refl > 0
-    meanI = flex.double(len(sumI), 0)
-    meanI.set_selected(sel, sumI.select(sel)/n_refl.select(sel))
-
-    all_mean_Is = flex.double(len(ISIGI), 0)
-    for i in xrange(len(ISIGI)):
-      hkl_id = ISIGI['miller_id'][i]
-      all_mean_Is[i] = sumI[hkl_id]/n_refl[hkl_id]
+    setup_isigi_stats(ISIGI, self.scaler.miller_set.indices())
+    meanI = ISIGI['mean_scaled_intensity']
 
     min_meanI = flex.min(meanI)
     step = (flex.max(meanI)-min_meanI)/n_bins
@@ -367,7 +396,7 @@ class sdfac_refine_refltable(sdfac_refine):
     sels = []
     binned_intensities = []
     for i in xrange(n_bins):
-      sel = (all_mean_Is > (min_meanI + step * i)) & (all_mean_Is < (min_meanI + step * (i+1)))
+      sel = (meanI > (min_meanI + step * i)) & (meanI < (min_meanI + step * (i+1)))
       if sel.all_eq(False): continue
       sels.append(sel)
       binned_intensities.append((step/2 + step*i)+min(meanI))
@@ -377,30 +406,29 @@ class sdfac_refine_refltable(sdfac_refine):
 
     return sels, binned_intensities
 
+  def run_minimzer(self, values, sels, **kwargs):
+   return simplex_minimizer_refltable(values, self.parameterization, self.scaler.ISIGI, self.scaler.miller_set.indices(), sels, kwargs['seed'], self.log)
+
   def adjust_errors(self):
     """
     Adjust sigmas according to Evans, 2011 Acta D and Evans and Murshudov, 2013 Acta D
     """
     print >> self.log, "Starting adjust_errors"
     print >> self.log, "Computing initial estimates of sdfac, sdb and sdadd"
-    sdfac, sdb, sdadd = self.get_initial_sdparams_estimates()
+    values = self.parameterization(flex.double(self.get_initial_sdparams_estimates()))
 
-    assert self.scaler.params.raw_data.error_models.sdfac_refine.target_function in ['original', 'squared']
-    squared = self.scaler.params.raw_data.error_models.sdfac_refine.target_function == 'squared'
-
-    print >> self.log, "Initial estimates:", sdfac, sdb, sdadd
-
-    from xfel import compute_normalized_deviations, apply_sd_error_params
-
+    print >> self.log, "Initial estimates:",
+    values.show(self.log)
     print >> self.log, "Refining error correction parameters sdfac, sdb, and sdadd"
     sels, binned_intensities = self.get_binned_intensities()
     seed = self.scaler.params.raw_data.error_models.sdfac_refine.random_seed
-    minimizer = simplex_minimizer_refltable(sdfac, sdb, sdadd, self.scaler.ISIGI, self.scaler.miller_set.indices(), sels, seed, self.log, squared)
-    sdfac, sdb, sdadd = minimizer.x
-    print >> self.log, "Final sdadd: %8.5f, sdb: %8.5f, sdadd: %8.5f"%(sdfac, sdb, sdadd)
+    minimizer = self.run_minimzer(values, sels, seed=seed)
+    values = minimizer.get_refined_params()
+    print >> self.log, "Final",
+    values.show(self.log)
 
     print >> self.log, "Applying sdfac/sdb/sdadd 1"
-    apply_sd_error_params(self.scaler.ISIGI, sdfac, sdb, sdadd, squared)
+    minimizer.apply_sd_error_params(self.scaler.ISIGI, values)
 
     self.scaler.summed_weight= flex.double(self.scaler.n_refl, 0.)
     self.scaler.summed_wt_I  = flex.double(self.scaler.n_refl, 0.)
@@ -430,4 +458,5 @@ class sdfac_refine_refltable(sdfac_refine):
       plt.plot(binned_intensities, binned_rms_normalized_sigmas, 'o')
       plt.show()
 
+      all_sigmas_normalized = all_sigmas_normalized.select(all_sigmas_normalized != 0)
       self.normal_probability_plot(all_sigmas_normalized, (-0.5, 0.5), plot = True)

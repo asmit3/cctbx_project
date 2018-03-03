@@ -5,6 +5,8 @@ from simtbx.nanoBragg import shapetype
 from simtbx.nanoBragg import nanoBragg
 import libtbx.load_env # possibly implicit
 from cctbx import crystal
+from cctbx import miller
+assert miller
 
 pdb_lines = """HEADER TEST
 CRYST1   50.000   60.000   70.000  90.00  90.00  90.00 P 1
@@ -194,10 +196,10 @@ def run_sim2smv(fileout):
 
   # try to write as CBF
   import dxtbx
-  from dxtbx.format.FormatCBFMiniPilatus import FormatCBFMiniPilatus
+  from dxtbx.format.FormatCBFMini import FormatCBFMini
   img = dxtbx.load("noiseimage_001.img")
   print img
-  FormatCBFMiniPilatus.as_file(
+  FormatCBFMini.as_file(
     detector=img.get_detector(),beam=img.get_beam(),gonio=img.get_goniometer(),scan=img.get_scan(),
     data=img.get_raw_data(),path=fileout)
   SIM.free_all()

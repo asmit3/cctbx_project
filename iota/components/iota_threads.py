@@ -3,7 +3,7 @@ from __future__ import division
 '''
 Author      : Lyubimov, A.Y.
 Created     : 04/14/2014
-Last Changed: 09/20/2017
+Last Changed: 02/12/2018
 Description : IOTA GUI Threads and PostEvents
 '''
 
@@ -16,6 +16,7 @@ from libtbx import easy_pickle as ep
 from libtbx import easy_run
 
 from dxtbx.datablock import DataBlockFactory
+import multiprocessing
 
 from iota.components.iota_utils import InputFinder
 import iota.components.iota_image as img
@@ -165,6 +166,8 @@ class ProcThread(Thread):
       return proc_image
     except IOTATermination, e:
       raise e
+    except Exception, e:
+      pass
 
 class ImageFinderThread(Thread):
   ''' Worker thread generated to poll filesystem on timer. Will check to see
@@ -261,6 +264,9 @@ EVT_SPFALLDONE = wx.PyEventBinder(tp_EVT_SPFALLDONE, 1)
 tp_EVT_SLICEDONE = wx.NewEventType()
 EVT_SLICEDONE = wx.PyEventBinder(tp_EVT_SLICEDONE)
 
+tp_EVT_SPFTERM = wx.NewEventType()
+EVT_SPFTERM = wx.PyEventBinder(tp_EVT_SPFTERM)
+
 class IOTATermination(Exception):
   def __init__(self, termination):
     Exception.__init__(self, termination)
@@ -281,19 +287,26 @@ class SpotFinderOneDone(wx.PyCommandEvent):
   def GetValue(self):
     return self.info
 
-# class SpotFinderOneThread():
-#   def __init__(self, parent, processor, term_file):
-#     self.meta_parent = parent.parent
-#     self.processor = processor
-#     self.term_file = term_file
-#
-#   def run(self, idx, img):
-#     if os.path.isfile(self.term_file):
-#       raise SpfTermination('IOTA_TRACKER: Termination signal received!')
-#     else:
-#       datablock = DataBlockFactory.from_filenames([img])[0]
-#       observed = self.processor.find_spots(datablock=datablock)
-#       return [idx, int(len(observed)), img]
+class SpotFinderTerminated(wx.PyCommandEvent):
+  ''' Send event when spotfinder terminated '''
+  def __init__(self, etype, eid):
+    wx.PyCommandEvent.__init__(self, etype, eid)
+  def GetValue(self):
+    return None
+
+class SpotFinderOneThread():
+  def __init__(self, parent, processor, term_file):
+    self.meta_parent = parent.parent
+    self.processor = processor
+    self.term_file = term_file
+
+  def run(self, idx, img):
+    if os.path.isfile(self.term_file):
+      raise IOTATermination('IOTA_TRACKER: Termination signal received!')
+    else:
+      datablock = DataBlockFactory.from_filenames([img])[0]
+      observed = self.processor.find_spots(datablock=datablock)
+      return [idx, int(len(observed)), img]
 
 class SpotFinderThread(Thread):
   ''' Basic spotfinder (with defaults) that could be used to rapidly analyze
@@ -311,11 +324,12 @@ class SpotFinderThread(Thread):
     self.terminated = False
 
   def run(self):
+    total_procs = multiprocessing.cpu_count()
     try:
       parallel_map(iterable=self.data_list,
                    func=self.spf_wrapper,
                    callback=self.callback,
-                   processes=None)
+                   processes=total_procs-5)
     except IOTATermination, e:
       self.terminated = True
       print e
@@ -324,6 +338,8 @@ class SpotFinderThread(Thread):
     try:
       if self.terminated:
         print 'RUN TERMINATED!'
+        evt = SpotFinderTerminated(tp_EVT_SPFTERM, -1)
+        wx.PostEvent(self.parent, evt)
       info = self.data_list
       evt = SpotFinderOneDone(tp_EVT_SPFALLDONE, -1, info=info)
       wx.PostEvent(self.parent, evt)
@@ -332,16 +348,30 @@ class SpotFinderThread(Thread):
       return
 
   def spf_wrapper(self, img):
-    if os.path.isfile(self.term_file):
-      os.remove(self.term_file)
-      raise IOTATermination('IOTA_TRACKER: Termination signal received!')
-    else:
+    # It appears that having a separate thread for each process prevents
+    # blocking of the GUI and makes navigation faster
+    try:
       if os.path.isfile(img):
-        datablock = DataBlockFactory.from_filenames([img])[0]
-        observed = self.processor.find_spots(datablock=datablock)
-        return [int(self.data_list.index(img)), int(len(observed)), img]
+        spf_worker = SpotFinderOneThread(self, self.processor, self.term_file)
+        result = spf_worker.run(idx=int(self.data_list.index(img)), img=img)
+        return result
       else:
         return [int(self.data_list.index(img)), 0, img]
+    except IOTATermination, e:
+      raise e
+
+
+  # def spf_wrapper(self, img):
+  #   if os.path.isfile(self.term_file):
+  #     os.remove(self.term_file)
+  #     raise IOTATermination('IOTA_TRACKER: Termination signal received!')
+  #   else:
+  #     if os.path.isfile(img):
+  #       datablock = DataBlockFactory.from_filenames([img])[0]
+  #       observed = self.processor.find_spots(datablock=datablock)
+  #       return [int(self.data_list.index(img)), int(len(observed)), img]
+  #     else:
+  #       return [int(self.data_list.index(img)), 0, img]
 
   def callback(self, info):
     try:

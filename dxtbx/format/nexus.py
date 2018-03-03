@@ -1,21 +1,16 @@
-#!/usr/bin/env python
-#
-# nexus.py
-#
 #  Copyright (C) 2013 Diamond Light Source
-#
-#  Author: James Parkhurst
 #
 #  This code is distributed under the BSD license, a copy of which is
 #  included in the root directory of this package.
 
-
 from __future__ import absolute_import, division
+
+import os
+
 try:
   from dxtbx_format_nexus_ext import *
 except ImportError:
   # Workaround for psana build, which doesn't link HDF5 properly
-  import os
   if 'SIT_ROOT' not in os.environ:
     raise
 
@@ -227,12 +222,10 @@ def convert_units(value, input_units, output_units):
   raise RuntimeError('Can\'t convert units "%s" to "%s"' % (input_units, output_units))
 
 
-def visit_dependancies(nx_file, item, visitor = None):
+def visit_dependencies(nx_file, item, visitor = None):
   '''
   Walk the dependency chain and call a visitor function
-
   '''
-  import os.path
   dependency_chain = []
   if os.path.basename(item) == 'depends_on':
     depends_on = nx_file[item][()]
@@ -314,7 +307,7 @@ def construct_vector(nx_file, item, vector=None):
     pass
   visitor = TransformVisitor(vector)
 
-  visit_dependancies(nx_file, item, visitor)
+  visit_dependencies(nx_file, item, visitor)
 
   return visitor.result()
 
@@ -1011,7 +1004,6 @@ def get_depends_on_chain_using_equipment_components(transformation):
   skip the intermediate dependencies, listing only the first at each level.
 
   '''
-  import os
   chain = []
   current = transformation
 
@@ -1069,7 +1061,6 @@ class DetectorFactoryFromGroup(object):
     from cctbx.eltbx import attenuation_coefficient
     from dxtbx.model import ParallaxCorrectedPxMmStrategy
     from scitbx import matrix
-    import os
 
     if idx is None:
       idx = 0
@@ -1528,23 +1519,8 @@ class DataList(object):
 
   def __getitem__(self, index):
     from scitbx.array_family import flex
-    import numpy as np
     d = self.lookup[index]
     i = index - self.offset[d]
-
-    # Keeping this in for the moment to allow evaluation of speed etc
-    # aiming to resolve dials#148
-    # mode_148 = True
-
-    # if mode_148:
-    #   # allocate empty array, copy data in
-    #   data = np.empty((self.height, self.width), dtype='uint32')
-    #   self.datasets[d].read_direct(data, np.s_[i,:,:], np.s_[:,:])
-    # else:
-    #   data = self.datasets[d][i,:,:]
-    #   if data.dtype == np.uint16:
-    #     data = data.astype(np.uint32)
-    # data_as_flex = flex.int(data)
     N, height, width = self.datasets[d].shape
     data_as_flex = dataset_as_flex_int(
       self.datasets[d].id.id,
@@ -1620,7 +1596,6 @@ class MultiPanelDataList(object):
 
   def __getitem__(self, index):
     from scitbx.array_family import flex
-    import numpy as np
     d = self.lookup[index]
     i = index - self.offset[d]
 
@@ -1662,7 +1637,6 @@ class DataFactory(object):
 class DetectorGroupDataFactory(DataFactory):
   """ Class to handle reading data from a detector with a NXdetector_group """
   def __init__(self, obj, instrument):
-    import os
     DataFactory.__init__(self, obj)
 
     # Map NXdetector names to list of datasets

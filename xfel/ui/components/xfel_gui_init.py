@@ -521,6 +521,7 @@ class RunStatsSentinel(Thread):
       run_tags=self.run_tags,
       run_statuses=self.run_statuses,
       minimalist=self.parent.run_window.runstats_tab.entire_expt,
+      easy_run=True,
       xsize=(sizex-115)/82, ysize=(sizey-115)/82,
       high_vis=self.parent.high_vis)
       # convert px to inches with fudge factor for scaling inside borders
@@ -2295,7 +2296,7 @@ class UnitCellTab(BaseTab):
     self.tab_sizer = wx.BoxSizer(wx.HORIZONTAL)
     # self.tab_panel.SetSizer(self.tab_sizer)
 
-    self.selection_columns_panel = wx.Panel(self, size=(100, 120))
+    self.selection_columns_panel = wx.Panel(self, size=(230, 120))
     self.selection_columns_box = wx.StaticBox(self.selection_columns_panel, label='Select tag sets')
     self.selection_columns_sizer = wx.StaticBoxSizer(self.selection_columns_box, wx.VERTICAL)
     self.selection_columns_panel.SetSizer(self.selection_columns_sizer)
@@ -2882,7 +2883,7 @@ class TrialPanel(wx.Panel):
   ''' A scrolled panel that contains run blocks and trial controls '''
 
   def __init__(self, parent, db, trial, box_label=None):
-    wx.Panel.__init__(self, parent=parent, size=(200, 200))
+    wx.Panel.__init__(self, parent=parent, size=(270, 200))
 
     self.db = db
     self.trial = trial

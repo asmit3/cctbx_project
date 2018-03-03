@@ -10,6 +10,7 @@
 #include <boost/python/args.hpp>
 #include <cctbx/maptbx/histogram.h>
 #include <cctbx/maptbx/resolution.h>
+#include <cctbx/maptbx/fsc.h>
 #include <cctbx/maptbx/sphericity.h>
 #include <cctbx/maptbx/mask.h>
 #include <cctbx/maptbx/utils.h>
@@ -127,6 +128,16 @@ namespace {
                                     arg("sites_cart"),
                                     arg("delta"),
                                     arg("selection"))))
+        .def(init<uctbx::unit_cell const&,
+             af::const_ref<double, af::c_grid_padded<3> > const&,
+             af::const_ref<scitbx::vec3<double> > const&,
+             af::const_ref<bool> const&,
+             std::string const& >((
+                                    arg("unit_cell"),
+                                    arg("map_target"),
+                                    arg("sites_cart"),
+                                    arg("selection"),
+                                    arg("interpolation"))))
         .def("target", &w_t::target)
         .def("gradients", &w_t::gradients)
       ;
@@ -252,11 +263,31 @@ namespace {
                      arg("hkl"),
                      arg("d_min"),
                      arg("d_max"))))
-        .def("ccs",         &w_t::ccs)
-        .def("d_mins",      &w_t::d_mins)
-        .def("d_min_cc9",   &w_t::d_min_cc9)
-        .def("d_min_cc99",  &w_t::d_min_cc99)
-        .def("d_min_cc999", &w_t::d_min_cc999)
+        .def("d_min_cc9",      &w_t::d_min_cc9)
+        .def("d_min_cc99",     &w_t::d_min_cc99)
+        .def("d_min_cc999",    &w_t::d_min_cc999)
+        .def("d_min_cc9999",   &w_t::d_min_cc9999)
+        .def("d_min_cc99999",  &w_t::d_min_cc99999)
+        .def("d_min_cc999999", &w_t::d_min_cc999999)
+      ;
+    }
+
+    {
+      typedef fsc w_t;
+
+      class_<w_t>("fsc", no_init)
+        .def(init<
+          af::const_ref<std::complex<double> > const&,
+          af::const_ref<std::complex<double> > const&,
+          af::const_ref<double> const&,
+          int const& >(
+                    (arg("f1"),
+                     arg("f2"),
+                     arg("d_spacings"),
+                     arg("step"))))
+        .def("fsc",   &w_t::cc)
+        .def("d",     &w_t::d)
+        .def("d_inv", &w_t::d_inv)
       ;
     }
 
@@ -929,14 +960,19 @@ namespace {
          scitbx::vec3<double> const&)) eight_point_interpolation_with_gradients);
     def("quadratic_interpolation_with_gradients",
       (af::tiny<double, 4>(*)
-        (af::const_ref<double, af::flex_grid<> > const&,
-         //af::const_ref<double, af::c_grid_padded<3> > const&,
+        (//af::const_ref<double, af::flex_grid<> > const&,
+         af::const_ref<double, af::c_grid_padded<3> > const&,
          scitbx::vec3<double> const&,
          scitbx::vec3<double> const&)) quadratic_interpolation_with_gradients);
     def("closest_grid_point",
       (af::c_grid_padded<3>::index_type(*)
         (af::flex_grid<> const&,
          fractional<double> const&)) closest_grid_point);
+    def("tricubic_interpolation_with_gradients",
+      (af::tiny<double, 4>(*)
+        (af::const_ref<double, af::c_grid_padded<3> > const&,
+         scitbx::vec3<double> const&,
+         scitbx::vec3<double> const&)) tricubic_interpolation_with_gradients);
     def("tricubic_interpolation",
       (double(*)
         (af::const_ref<double, af::c_grid_padded<3> > const&,

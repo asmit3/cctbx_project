@@ -3,7 +3,7 @@ from __future__ import division
 '''
 Author      : Lyubimov, A.Y.
 Created     : 10/10/2014
-Last Changed: 11/03/2017
+Last Changed: 02/12/2018
 Description : Creates image object. If necessary, converts raw image to pickle
               files; crops or pads pickle to place beam center into center of
               image; masks out beam stop. (Adapted in part from
@@ -144,7 +144,7 @@ class SingleImage(object):
       with misc.Capturing() as junk_output:
         loaded_img = dxtbx.load(self.raw_img)
     except Exception, e:
-      print e
+      print 'IOTA IMPORT ERROR:', e
       loaded_img = None
       pass
 
@@ -264,10 +264,10 @@ class SingleImage(object):
     width = data['SIZE1']
     height = data['SIZE2']
     pixels = data['DATA']
-    right = beam_x
-    left = width - beam_x
+    left = beam_x
+    right = width - left
     top = beam_y
-    bottom = height - beam_y
+    bottom = height - top
     new_pixels = pixels.deep_copy()
     new_size = None
 
@@ -278,9 +278,19 @@ class SingleImage(object):
       new_size = new_half_size * 2
       min_x = beam_x - new_half_size
       min_y = beam_y - new_half_size
-      new_beam_x = data['BEAM_CENTER_X'] - min_x * pixel_size
-      new_beam_y = data['BEAM_CENTER_Y'] - min_y * pixel_size
-      new_pixels = pixels[min_y:min_y+new_size,min_x:min_x+new_size]
+      max_x = beam_x + new_half_size
+      max_y = beam_y + new_half_size
+
+      if self.params.advanced.flip_beamXY:
+        new_beam_x = data['BEAM_CENTER_X'] - min_y * pixel_size
+        new_beam_y = data['BEAM_CENTER_Y'] - min_x * pixel_size
+        new_pixels = pixels[min_x:max_x, min_y:max_y]
+      else:
+        new_beam_x = data['BEAM_CENTER_X'] - min_x * pixel_size
+        new_beam_y = data['BEAM_CENTER_Y'] - min_y * pixel_size
+        new_pixels = pixels[min_y:max_y, min_x:max_x]
+
+
       assert new_pixels.focus()[0] == new_pixels.focus()[1]
 
     # the new image will be twice the size as the LARGEST distance between the
@@ -290,21 +300,30 @@ class SingleImage(object):
       new_size = new_half_size * 2
       delta_x = new_half_size - beam_x
       delta_y = new_half_size - beam_y
-      new_beam_x = data['BEAM_CENTER_X'] + delta_x * pixel_size
-      new_beam_y = data['BEAM_CENTER_Y'] + delta_y * pixel_size
       new_pixels.resize(flex.grid(new_size, new_size))
       new_pixels.fill(-2)
 
-      new_pixels.matrix_paste_block_in_place(pixels, delta_y, delta_x)
+      if self.params.advanced.flip_beamXY:
+        new_beam_x = data['BEAM_CENTER_X'] + delta_y * pixel_size
+        new_beam_y = data['BEAM_CENTER_Y'] + delta_x * pixel_size
+        new_pixels.matrix_paste_block_in_place(pixels, delta_x, delta_y)
+      else:
+        new_beam_x = data['BEAM_CENTER_X'] + delta_x * pixel_size
+        new_beam_y = data['BEAM_CENTER_Y'] + delta_y * pixel_size
+        new_pixels.matrix_paste_block_in_place(pixels, delta_y, delta_x)
+
+    else:
+      new_beam_x = data['BEAM_CENTER_X']
+      new_beam_y = data['BEAM_CENTER_Y']
 
     # save the results
     if new_size is not None:
       data['DATA'] = new_pixels
       data['SIZE1'] = new_size
       data['SIZE2'] = new_size
+      data['ACTIVE_AREAS'] = flex.int([0 , 0, new_size, new_size])
       data['BEAM_CENTER_X'] = new_beam_x
       data['BEAM_CENTER_Y'] = new_beam_y
-      data['ACTIVE_AREAS'] = flex.int([0 , 0, new_size, new_size])
 
     return data
 
@@ -703,7 +722,6 @@ class SingleImage(object):
 
   def process(self, single_image=False):
     """ Image processing; selects method, runs requisite modules """
-
     if self.status != 'bypass grid search':
       self.status = 'processing'
 

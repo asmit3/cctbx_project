@@ -624,15 +624,15 @@ class dataset_statistics (object) :
 
   @property
   def cc_anom_table (self) :
-    column_labels = ["1/d**2", "CC(anom)"]
+    column_labels = ["d_min", "CC(anom)"]
     graph_columns = [[0,1]]
     graph_names = ["CC(anom)"]
     table = data_plots.table_data(
       title="Half-dataset anomalous correlation",
-      column_labels=["1/d**2", "CC(anom)"],
+      column_labels=column_labels,
       column_formats=["%6.2f", "%5.3f"],
-      graph_names=["CC(anom)"],
-      graph_columns=[[0,1]],
+      graph_names=graph_names,
+      graph_columns=graph_columns,
       x_is_inverse_d_min=True,
       force_exact_x_labels=True)
     for bin in self.bins :

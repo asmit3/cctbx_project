@@ -30,6 +30,7 @@ class TestSimpleAlignment(unittest.TestCase):
     self.chain_b = self.ph.models()[0].chains()[1]
     self.hierarchy_a = self.ph.select(cache.selection('chain A'))
     self.hierarchy_b = self.ph.select(cache.selection('chain B'))
+    self.p = ncs.input.get_default_params()
 
   def test_1(self):
     # print sys._getframe().f_code.co_name
@@ -83,7 +84,7 @@ class TestSimpleAlignment(unittest.TestCase):
     no_water_h = self.ph.select(asc.selection("not water"))
     match_dict = ncs_search.search_ncs_relations(
       ph=no_water_h,
-      chain_similarity_threshold=0.70)
+      chain_similarity_threshold=0.7)
 
     chain_a_id, chain_b_id = match_dict.keys()[0]
     sel_a,sel_b,r1,r2,_,_,_ = match_dict[chain_a_id, chain_b_id]
@@ -134,7 +135,9 @@ class TestSimpleAlignment(unittest.TestCase):
     res_n_b = [1, 2, 3, 4, 5, 6, 7, 8, 9]
     list_a = [flex.size_t(x) for x in info_ab['A'].atom_selection]
     list_b = [flex.size_t(x) for x in info_ab['B'].atom_selection]
-    sel_a = ncs_search.make_selection_from_lists(list_a)
+    xxx = [x for y in list_a for x in y]
+    xxx.sort()
+    sel_a = flex.size_t(xxx)
     other_sites = ph.select(sel_a).atoms().extract_xyz()
     ref_sites = ph_b.atoms().extract_xyz()
     self.assertEqual(other_sites.size(),ref_sites.size())
@@ -160,56 +163,35 @@ class TestSimpleAlignment(unittest.TestCase):
         chains_info=chains_info,
         chain_similarity_threshold=0.10,
         chain_max_rmsd=2.3)
-    group_dict = ncs_search.ncs_grouping_and_group_dict(match_dict, ph)
+    nrgl = ncs_search.ncs_grouping_and_group_dict(match_dict, ph)
     # print group_dict
+    nrgl.update_str_selections_if_needed(hierarchy=ph)
+    # nrgl._show()
+    strsels = nrgl.get_array_of_str_selections()
+    # print strsels
+    assert strsels == [[
+        "(chain 'A' and resid 2 through 216)",
+        "chain 'B'",
+        "chain 'C'",
+        "(chain 'D' and (resid 2 through 171 or resid 186 through 216))"]]
+    assert nrgl.get_n_groups() == 1
+    isels = nrgl[0].get_iselections_list()
+    isels_list = [list(a) for a in isels]
+    # print isels_list
+    assert isels_list == [
+        [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+         27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44,
+         45, 46, 47, 48, 49, 50, 51],
+        [52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69,
+         70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87,
+         88, 89, 90, 91, 92, 93, 94],
+        [95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109,
+         110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123,
+         124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137],
 
-    a_res_list = group_dict[('A',)].residue_index_list[0]
-    b_res_list = group_dict[('A',)].residue_index_list[1]
-    c_res_list = group_dict[('A',)].residue_index_list[2]
-    d_res_list = group_dict[('A',)].residue_index_list[3]
-    #
-    self.assertEqual(a_res_list,[[1, 2, 3, 4, 5]])
-    self.assertEqual(b_res_list,[[0, 1, 2, 3, 4]])
-    self.assertEqual(c_res_list,[[0, 1, 2, 3, 4]])
-    self.assertEqual(d_res_list,[[0, 1, 2, 4, 5]])
-    #
-
-    ar = [chains_info['A'].res_names[x] for x in a_res_list[0]]
-    br = [chains_info['B'].res_names[x] for x in b_res_list[0]]
-    cr = [chains_info['C'].res_names[x] for x in c_res_list[0]]
-    dr = [chains_info['D'].res_names[x] for x in d_res_list[0]]
-    #
-    self.assertEqual(ar,br)
-    self.assertEqual(ar,cr)
-    self.assertEqual(ar,dr)
-    #
-    a_sel = list(group_dict[('A',)].iselections[0][0])
-    b_sel = list(group_dict[('A',)].iselections[1][0])
-    c_sel = list(group_dict[('A',)].iselections[2][0])
-    d_sel = list(group_dict[('A',)].iselections[3][0])
-    a = [9, 10, 11, 12, 13, 14, 15, 17, 18, 19, 20, 21, 22, 23, 24, 25, 27, 28,
-         29, 30, 31, 32, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 47, 48,
-         49, 50, 51]
-    b = [52, 53, 54, 55, 56, 57, 58, 59, 60, 62, 63, 64, 65, 66, 68, 69, 70, 71,
-         72, 73, 74, 75, 76, 77, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 90, 91,
-         92, 93, 94]
-    c = [95, 96, 97, 98, 99, 100, 101, 102, 103, 105, 106, 107, 108, 109, 111,
-         112, 113, 114, 115, 116, 117, 118, 120, 121, 122, 123, 124, 125, 126,
-         127, 128, 129, 131, 132, 133, 134, 135, 136, 137]
-    d = [138, 139, 140, 141, 142, 143, 144, 146, 147, 148, 149, 150, 151, 152,
-         154, 155, 156, 157, 158, 159, 160, 165, 166, 167, 169, 170, 171, 172,
-         173, 174, 175, 176, 178, 179, 180, 181, 182, 183, 184]
-    # This selections seems to be wrong...
-    # self.assertEqual(a_sel,a)
-    # self.assertEqual(b_sel,b)
-    # self.assertEqual(c_sel,c)
-    # self.assertEqual(d_sel,d)
-    #
-    self.assertEqual(len(a),len(b))
-    self.assertEqual(len(a),len(c))
-    self.assertEqual(len(a),len(d))
-    #
-    self.assertEqual(group_dict[('A',)].copies,[['A'], ['B'], ['C'], ['D']])
+        [138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151,
+         152, 153, 154, 155, 156, 157, 158, 159, 160, 165, 166, 167, 168, 169,
+         170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184]]
 
   def test_split_chain_with_altloc(self):
     # print sys._getframe().f_code.co_name
@@ -226,19 +208,15 @@ class TestSimpleAlignment(unittest.TestCase):
   def test_groups_with_chains_of_different_size(self):
     # print sys._getframe().f_code.co_name
     pdb_inp = iotbx.pdb.input(source_info=None, lines=test_pdb_6)
-    ncs_results = ncs_search.find_ncs_in_hierarchy(ph=pdb_inp.construct_hierarchy())
-    # answer = ncs_results[('H','I')].residue_index_list
-    # residue_index_list = [[[0, 1, 2], [0]], [[0, 1, 2], [0]], [[0, 1, 2], [0]]]
-    # self.assertEqual(answer,residue_index_list)
-    # answer = ncs_results[('H','I')].copies
-    # self.assertEqual(answer,[['H', 'I'], ['J', 'K'], ['L', 'M']])
-    answer = ncs_results[('H',)].residue_index_list
-    # print answer
-    residue_index_list = [[[0, 1, 2]], [[0, 1, 2]], [[0, 1, 2]]]
-    self.assertEqual(answer,residue_index_list)
-    answer = ncs_results[('H',)].copies
-    # print answer
-    self.assertEqual(answer,[['H'], ['J'], ['L']])
+    ph=pdb_inp.construct_hierarchy()
+    nrgl = ncs_search.find_ncs_in_hierarchy(ph=ph)
+    nrgl.update_str_selections_if_needed(hierarchy=ph)
+    str_sels = nrgl.get_array_of_str_selections()
+    self.assertEqual(str_sels,
+        [["(chain 'H' and (resid 5 through 6 or (resid 640 and (name C1 ))))",
+          "chain 'J'", "(chain 'L' and (resid 5 through 6 or (resid 646 and (name C1 ))))"],
+        ["chain 'I'", "chain 'K'", "chain 'M'"]])
+
 
   def test_iselection_is_in_correct_order(self):
     """ Make sure can calling get_ncs_restraints_group_list does not raise
@@ -261,27 +239,15 @@ class TestSimpleAlignment(unittest.TestCase):
     chains_info = ncs_search.get_chains_info(ph)
     match_dict = ncs_search.search_ncs_relations(ph=ph,
       chains_info=chains_info,chain_similarity_threshold=0.10)
-    group_dict = ncs_search.ncs_grouping_and_group_dict(match_dict, ph)
+    nrgl = ncs_search.ncs_grouping_and_group_dict(match_dict, ph)
+    nrgl.update_str_selections_if_needed(hierarchy=ph)
+    str_sels = nrgl.get_array_of_str_selections()
+    self.assertEqual(str_sels,
+        [["chain 'A'", "chain 'D'", "chain 'F'"],
+        ["chain 'B'", "chain 'E'", "chain 'G'"]])
+    # nrgl._show()
     #
-    # r = transform_to_group[1][2][0]
-    # t = transform_to_group[1][2][1]
-    # rt = r.transpose()
-    # tt = - rt*t
-    # #
-    # xyz_A = ph.select(flex.size_t_range(0,6)).atoms().extract_xyz()
-    # xyz_B = ph.select(flex.size_t_range(6,10)).atoms().extract_xyz()
-    # xyz_F = ph.select(flex.size_t_range(20,26)).atoms().extract_xyz()
-    # xyz_G = ph.select(flex.size_t_range(26,30)).atoms().extract_xyz()
-    # #
-    # xyz_F_expected = (rt.elems * xyz_A + tt)
-    # xyz_G_expected = (rt.elems * xyz_B + tt)
-    # #
-    # self.assertEqual(list(xyz_F.round(3)),list(xyz_F_expected.round(3)))
-    # self.assertEqual(list(xyz_G.round(3)),list(xyz_G_expected.round(3)))
-    #
-    # group_dict = ncs_search.build_group_dict(
-    #   transform_to_group,match_dict,chains_info)
-    self.assertEqual(group_dict.keys(),[('A',), ('B',)])
+    # self.assertEqual(group_dict.keys(),[('A',), ('B',)])
 
   def test_split_groups_to_spec(self):
     # print sys._getframe().f_code.co_name
@@ -298,7 +264,10 @@ class TestSimpleAlignment(unittest.TestCase):
     pdb_inp = iotbx.pdb.input(lines=test_pdb_6,source_info=None)
     ph = pdb_inp.construct_hierarchy()
     ncs_obj = ncs.input(hierarchy=ph)
-    self.assertEqual(len(ncs_obj.ncs_copies_chains_names),6)
+    nrgl = ncs_obj.get_ncs_restraints_group_list()
+    self.assertEqual(nrgl.get_n_groups(), 2)
+    self.assertEqual(nrgl[0].get_number_of_copies(), 2)
+    self.assertEqual(nrgl[1].get_number_of_copies(), 2)
 
   def test_min_contig_length(self):
     """ Test correct handling of min_contig_length and min_percent
@@ -308,11 +277,12 @@ class TestSimpleAlignment(unittest.TestCase):
     query         AAKDVKFGNDARVKMLRGVNVLADAVKVTVAS-----------TATVLAQAI
     """
     h = iotbx.pdb.input(source_info=None, lines=test_pdb_8).construct_hierarchy()
+    self.p.ncs_search.chain_max_rmsd=10
+    self.p.ncs_search.residue_match_radius=1000
+    self.p.ncs_search.chain_similarity_threshold=0.5
     ncs_obj = ncs.input(
         hierarchy=h,
-        chain_max_rmsd=10,
-        residue_match_radius=1000,
-        chain_similarity_threshold=0.5)
+        params=self.p.ncs_search)
     self.assertEqual(ncs_obj.number_of_ncs_groups,1)
     ncs_groups = ncs_obj.get_ncs_restraints_group_list()
     assert len(ncs_groups) == 1
@@ -330,10 +300,11 @@ class TestSimpleAlignment(unittest.TestCase):
       'ATOM      4  C   ASP A   5      90.136 -30.762  71.617  1.00 77.70           C'
     ]
     h = iotbx.pdb.input(source_info=None, lines='\n'.join(pdb_lines)).construct_hierarchy()
+    self.p.ncs_search.chain_max_rmsd=10
+    self.p.ncs_search.chain_similarity_threshold=0.20
     ncs_obj = ncs.input(
         hierarchy=h,
-        chain_max_rmsd=10,
-        chain_similarity_threshold=0.20)
+        params=self.p.ncs_search)
     # x = ncs_obj.get_ncs_info_as_spec(write=True,show_ncs_phil=True)
     # x = ncs_obj.show(format='spec')
     # check another pdb string
@@ -346,8 +317,9 @@ class TestSimpleAlignment(unittest.TestCase):
     '''  Test processing of overlapping identical chains  '''
     h = iotbx.pdb.input(source_info=None, lines=pdb_str10).construct_hierarchy()
     ncs_inp = ncs.input(hierarchy=h)
-    t = ncs_inp.ncs_group_map[1]
-    self.assertEqual(t,[{"chain 'A '"}, {'0000000001', '0000000002', '0000000003'}, "chain 'A '"])
+    nrgl = ncs_inp.get_ncs_restraints_group_list()
+    # nrgl._show()
+    self.assertEqual(nrgl[0].master_str_selection, "chain 'A '")
 
 
 test_pdb_1 = '''\
@@ -1377,7 +1349,7 @@ def run_selected_tests():
   2) Comment out unittest.main()
   3) Un-comment unittest.TextTestRunner().run(run_selected_tests())
   """
-  tests = ['test_update_atom_selections']
+  tests = ['test_correct_transform_selection']
   suite = unittest.TestSuite(map(TestSimpleAlignment,tests))
   return suite
 

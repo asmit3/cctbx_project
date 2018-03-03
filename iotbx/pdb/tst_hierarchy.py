@@ -3,7 +3,8 @@ from iotbx import pdb
 from cctbx.array_family import flex
 from libtbx.test_utils import Exception_expected, approx_equal, show_diff
 from libtbx.str_utils import show_string
-from libtbx.utils import hashlib_md5, Sorry, format_cpu_times
+import hashlib
+from libtbx.utils import Sorry, format_cpu_times
 import libtbx.load_env
 from libtbx import Auto
 from cStringIO import StringIO
@@ -4654,7 +4655,7 @@ HETATM    7 CA   ION B   2      30.822  10.665  17.190  1.00 36.87
   h = pdb_inp.construct_hierarchy(set_atom_i_seq=False, sort_atoms=False)
   for i in xrange(2):
     s = h.as_pdb_string()
-    d = hashlib_md5(s).hexdigest()
+    d = hashlib.md5(s).hexdigest()
     if (pdb.hierarchy.atom.has_siguij()):
       assert d == "c4089359af431bb2962d6a8e457dd86f"
     else:
@@ -6906,6 +6907,45 @@ END
   ph_in.rename_chain_id(old_id="C", new_id="A")
   assert [c.id.strip() for c in ph_in.chains()] == ["B","A"]
 
+def exercise_shift_to_origin():
+  pdb_inp = pdb.input(source_info=None, lines="""\
+CRYST1   10.000   10.000   10.000  90.00  90.00  90.00 P 1
+HETATM 1135 MG   MG  A1002      15.000  25.000  35.000  1.00 40.88          Mg
+""")
+  ph = pdb_inp.construct_hierarchy()
+  ph.shift_to_origin(crystal_symmetry=pdb_inp.crystal_symmetry())
+  assert approx_equal(list(ph.atoms().extract_xyz())[0],[5,5,5])
+
+def exercise_remove_residue_groups_with_atoms_on_special_positions_selective():
+  pdb_inp = pdb.input(source_info=None, lines="""\
+CRYST1   63.163   63.163   63.163  90.00  90.00  90.00 P 43 3 2     24
+ATOM      1  N   ASN A 157      24.727  56.381   3.666  1.00 91.06           N
+ATOM      2  CA  ASN A 157      25.810  56.034   2.749  1.00 80.09           C
+ATOM      3  C   ASN A 157      26.430  54.639   2.977  1.00 78.36           C
+ATOM      4  O   ASN A 157      26.317  54.040   4.054  1.00 63.78           O
+ATOM      5  CB  ASN A 157      26.887  57.131   2.745  1.00101.42           C
+ATOM      6  CG  ASN A 157      28.150  56.719   1.991  1.00118.14           C
+ATOM      7  OD1 ASN A 157      29.118  56.232   2.602  1.00 77.94           O
+ATOM      8  ND2 ASN A 157      28.130  56.863   0.656  1.00100.46           N
+TER
+HETATM  143  S   SO4 A 201      35.546  59.209   3.956  0.18 60.16           S
+HETATM  144  O1  SO4 A 201      35.886  60.613   4.197  0.18 51.29           O
+HETATM  145  O2  SO4 A 201      35.779  58.873   2.549  0.18 51.29           O
+HETATM  146  O3  SO4 A 201      36.392  58.365   4.792  0.18 51.09           O
+HETATM  147  O4  SO4 A 201      34.143  58.969   4.301  0.18 51.29           O
+HETATM  148  O   HOH A 301      34.726  50.417  -2.119  1.00 57.37           O
+HETATM  153  O   HOH A 306      40.659  54.085   9.078  0.33 44.83           O
+HETATM  154  O   HOH A 307      38.574  47.757   2.362  1.00 63.80           O
+END
+""")
+  cs = pdb_inp.crystal_symmetry()
+  ph = pdb_inp.construct_hierarchy()
+  removed = ph.remove_residue_groups_with_atoms_on_special_positions_selective(
+    crystal_symmetry=cs)
+  assert removed == ['A, 201 ,SO4', 'A, 306 ,HOH']
+  removed = ph.remove_residue_groups_with_atoms_on_special_positions_selective(
+    crystal_symmetry=cs)
+  assert removed == []
 
 def exercise(args):
   comprehensive = "--comprehensive" in args
@@ -6921,6 +6961,8 @@ def exercise(args):
       prev = key
   phenix_regression_pdb_file_names = get_phenix_regression_pdb_file_names()
   while True:
+    exercise_remove_residue_groups_with_atoms_on_special_positions_selective()
+    exercise_shift_to_origin()
     exercise_rename_chain_id()
     exercise_convert_met_to_semet()
     exercise_truncate_to_polyala()

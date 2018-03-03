@@ -34,8 +34,8 @@ class lbfgs_exgauss ():
     self.x = initial.deep_copy()
     self.minimizer = scitbx.lbfgs.run(target_evaluator=self,
                      termination_params = scitbx.lbfgs.termination_parameters
-                     (traditional_convergence_test_eps=1.e-10, min_iterations=0), core_params =
-                     scitbx.lbfgs.core_parameters(gtol=0.00011), log=sys.stdout)
+                     (traditional_convergence_test_eps=1.e-5, min_iterations=0), core_params =
+                     scitbx.lbfgs.core_parameters(gtol=0.01), log=None)
     self.a = self.x
 
   def skewness(self,data):
@@ -109,10 +109,13 @@ class lbfgs_exgauss ():
       exp_2 = np.exp(-z2*z2)/np.sqrt(np.pi)
       exp_0 = np.exp(-u+0.5*v*v)
       if np.isinf(exp_0):
-        exp_0 = 0.0
-      grad[0] += prefactor*((-exp_1) - exp_0*((phi_uv2v/tau) + (exp_2*(-1./(sigma*np.sqrt(2))))))
-      grad[1] += prefactor*((-exp_1*z1*np.sqrt(2)) - exp_0*((phi_uv2v*sigma/(tau*tau))+(exp_2*(-np.sqrt(2)/tau - z2/sigma))))
-      grad[2] += prefactor*((0.0) - exp_0*((phi_uv2v*u/tau) - (phi_uv2v*v*v/tau) + (exp_2*(v/(tau*np.sqrt(2))))))
+        grad[0] += prefactor*((-exp_1))
+        grad[1] += prefactor*((-exp_1*z1*np.sqrt(2)))
+        grad[2] += prefactor*((0.0))
+      else:
+        grad[0] += prefactor*((-exp_1) - exp_0*((phi_uv2v/tau) + (exp_2*(-1./(sigma*np.sqrt(2))))))
+        grad[1] += prefactor*((-exp_1*z1*np.sqrt(2)) - exp_0*((phi_uv2v*sigma/(tau*tau))+(exp_2*(-np.sqrt(2)/tau - z2/sigma))))
+        grad[2] += prefactor*((0.0) - exp_0*((phi_uv2v*u/tau) - (phi_uv2v*v*v/tau) + (exp_2*(v/(tau*np.sqrt(2))))))
 
 #    print 'gradients', grad[0], grad[1], grad[2]
     return result,grad

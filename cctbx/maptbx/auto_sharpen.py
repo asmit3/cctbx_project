@@ -149,6 +149,12 @@ master_phil = iotbx.phil.parse("""
        .short_caption = Solvent fraction iterations
        .style = hidden
 
+     molecular_mass = None
+       .type = float
+       .help = Molecular mass of molecule in Da. Used as alternative method \
+                 of specifying solvent content.
+       .short_caption = Molecular mass in Da
+
       ncs_copies = None
         .type = int
         .help = You can specify ncs copies and seq file to define solvent \
@@ -541,7 +547,8 @@ master_phil = iotbx.phil.parse("""
        .short_caption = Region weighting
        .help = Region weighting in adjusted surface area calculation.\
             Score is surface area minus region_weight times number of regions.\
-            Default is 20. A smaller value will give more sharpening.
+            Default is set automatically.  \
+            A smaller value will give more sharpening.
 
      sa_percent = None
        .type = float
@@ -638,8 +645,8 @@ def get_params(args,out=sys.stdout):
   params=set_sharpen_params(params,out)
   return params
 
-def set_sharpen_params(params,out=sys.stdout):
 
+def set_sharpen_params(params,out=sys.stdout):
 
   if params.map_modification.resolution_dependent_b==[0,0,0]:
     params.map_modification.resolution_dependent_b=[0,0,1.e-10]
@@ -719,7 +726,6 @@ def get_map_and_model(params=None,
 
   acc=None # accessor used to shift map back to original location if desired
   origin_frac=(0,0,0)
-  acc=None
   if map_data and crystal_symmetry:
     pass # we are set
 
@@ -775,6 +781,12 @@ def get_map_and_model(params=None,
   if params.crystal_info.resolution is None:
     raise Sorry("Need resolution if map is supplied")
 
+  if params.crystal_info.resolution >= 10:
+    print >>out,"\n** WARNING: auto_sharpen is designed for maps at a "+\
+      "resolution of about 4.5 A\nor better.  Sharpening may be"+\
+      "poor at %7.0f A" %(resolution)
+
+
   if params.input_files.pdb_file and not pdb_inp: # get model
     model_file=params.input_files.pdb_file
     if not os.path.isfile(model_file):
@@ -815,6 +827,7 @@ def run(args=None,params=None,
     pdb_inp=None,
     ncs_obj=None,
     return_map_data_only=False,
+    return_unshifted_map=False,
     half_map_data_list=None,
     ncs_copies=None,
     n_residues=None,
@@ -853,6 +866,7 @@ def run(args=None,params=None,
         map=map_data,
         half_map_data_list=half_map_data_list,
         solvent_content=params.crystal_info.solvent_content,
+        molecular_mass=params.crystal_info.molecular_mass,
         input_weight_map_pickle_file=\
             params.input_files.input_weight_map_pickle_file,
         output_weight_map_pickle_file=\
@@ -953,14 +967,16 @@ def run(args=None,params=None,
 
   # write out the new map_coeffs and map if requested:
 
+  offset_map_data=new_map_data.deep_copy()
+  if acc is not None:  # offset the map to match original if possible
+    offset_map_data.reshape(acc)
+
   if write_output_files and params.output_files.sharpened_map_file and \
-      new_map_data:
+      offset_map_data:
     output_map_file=os.path.join(params.output_files.output_directory,
         params.output_files.sharpened_map_file)
     from cctbx.maptbx.segment_and_split_map import write_ccp4_map
-    offset_map_data=new_map_data.deep_copy()
-    if acc is not None:  # offset the map to match original if possible
-      offset_map_data.reshape(acc)
+    if acc is not None:  # we offset the map to match original
       print >>out,\
        "\nWrote sharpened map in original location with origin at %s\nto %s" %(
          str(offset_map_data.origin()),output_map_file)
@@ -982,16 +998,20 @@ def run(args=None,params=None,
       new_map_coeffs:
     output_map_coeffs_file=os.path.join(params.output_files.output_directory,
         params.output_files.sharpened_map_coeffs_file)
-    from cctbx.maptbx.segment_and_split_map import write_ccp4_map
     new_map_coeffs.as_mtz_dataset(column_root_label='FWT').mtz_object().write(
        file_name=output_map_coeffs_file)
     print >>out,"\nWrote sharpened map_coeffs (origin at 0,0,0)\n to %s\n" %(
        output_map_coeffs_file)
 
+  if return_unshifted_map:
+    map_to_return=offset_map_data
+  else:
+    map_to_return=new_map_data
+
   if return_map_data_only:
-    return new_map_data
+    return map_to_return
   else:  #usual
-    return new_map_data,new_map_coeffs,crystal_symmetry,si
+    return map_to_return,new_map_coeffs,crystal_symmetry,si
 
 # =============================================================================
 # GUI-specific bits for running command

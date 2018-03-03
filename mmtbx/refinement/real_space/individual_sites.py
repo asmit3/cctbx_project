@@ -4,7 +4,6 @@ import scitbx.lbfgs
 from cctbx import maptbx
 from cctbx.array_family import flex
 from mmtbx import utils
-import mmtbx.ncs.ncs_utils as ncs_utils
 from libtbx.test_utils import approx_equal
 from cctbx import crystal
 import mmtbx.refinement.minimization_ncs_constraints
@@ -22,6 +21,7 @@ class easy(object):
         xray_structure,
         pdb_hierarchy,
         geometry_restraints_manager,
+        gradients_method="fd",
         selection=None,
         rms_bonds_limit=0.015,
         rms_angles_limit=2.0,
@@ -29,6 +29,7 @@ class easy(object):
         w = None,
         states_accumulator=None,
         log=None):
+    assert gradients_method in ["fd", "linear", "quadratic", "tricubic"]
     adopt_init_args(self, locals())
     es = geometry_restraints_manager.geometry.energies_sites(
       sites_cart = xray_structure.sites_cart())
@@ -43,7 +44,8 @@ class easy(object):
         pdb_hierarchy               = self.pdb_hierarchy,
         geometry_restraints_manager = geometry_restraints_manager,
         rms_bonds_limit             = rms_bonds_limit,
-        rms_angles_limit            = rms_angles_limit)
+        rms_angles_limit            = rms_angles_limit,
+        gradients_method            = gradients_method)
       self.w = self.weight.weight
     if(selection is None):
       selection = flex.bool(self.xray_structure.scatterers().size(), True)
@@ -52,7 +54,8 @@ class easy(object):
       selection                   = selection,
       max_iterations              = max_iterations,
       geometry_restraints_manager = geometry_restraints_manager.geometry,
-      states_accumulator          = states_accumulator)
+      states_accumulator          = states_accumulator,
+      gradients_method            = gradients_method)
     refine_object.refine(weight = self.w, xray_structure = self.xray_structure)
     self.rmsd_bonds_final, self.rmsd_angles_final = refine_object.rmsds()
     self.xray_structure=self.xray_structure.replace_sites_cart(
@@ -65,6 +68,7 @@ class simple(object):
         target_map,
         selection,
         geometry_restraints_manager,
+        gradients_method="fd",
         real_space_gradients_delta=1./4,
         selection_real_space=None,
         max_iterations=150,
@@ -88,6 +92,7 @@ class simple(object):
       self.site_symmetry_table = xray_structure.site_symmetry_table()
       self.refined = maptbx.real_space_refinement_simple.lbfgs(
         selection_variable              = self.selection,
+        gradients_method                = self.gradients_method,
         selection_variable_real_space   = self.selection_real_space,
         sites_cart                      = xray_structure.sites_cart(),
         density_map                     = self.target_map,
@@ -290,6 +295,7 @@ class box_refinement_manager(object):
                xray_structure,
                target_map,
                geometry_restraints_manager,
+               gradients_method="fd",
                real_space_gradients_delta=1./4,
                max_iterations = 50,
                ncs_groups = None):
@@ -301,6 +307,7 @@ class box_refinement_manager(object):
     self.real_space_gradients_delta = real_space_gradients_delta
     self.weight_optimal = None
     self.ncs_groups = ncs_groups
+    self.gradients_method = gradients_method
 
   def update_xray_structure(self, new_xray_structure):
     self.xray_structure = new_xray_structure
@@ -316,7 +323,7 @@ class box_refinement_manager(object):
              box_cushion=2,
              rms_bonds_limit = 0.03,
              rms_angles_limit = 3.0):
-    if(self.ncs_groups is None): # no NCS constraints
+    if(self.ncs_groups is None or len(self.ncs_groups)==0): # no NCS constraints
       sites_cart_moving = self.sites_cart
       selection_within = self.xray_structure.selection_within(
         radius    = selection_buffer_radius,
@@ -342,7 +349,8 @@ class box_refinement_manager(object):
         selection                   = sel,
         real_space_gradients_delta  = self.real_space_gradients_delta,
         max_iterations              = self.max_iterations,
-        geometry_restraints_manager = geo_box)
+        geometry_restraints_manager = geo_box,
+        gradients_method            = self.gradients_method)
       real_space_result = refinery(
         refiner                  = rsr_simple_refiner,
         xray_structure           = box.xray_structure_box,
@@ -366,9 +374,7 @@ class box_refinement_manager(object):
       xrs = self.xray_structure.select(selection)
       sel = flex.bool(xrs.scatterers().size(), True)
       size = self.xray_structure.scatterers().size()
-      ncs_groups_ = ncs_utils.ncs_groups_selection(
-        ncs_restraints_group_list = self.ncs_groups,
-        selection                 = selection)
+      ncs_groups_ = self.ncs_groups.select(selection=selection)
       #
       rsr_simple_refiner = simple(
         target_map                  = self.target_map,
@@ -456,7 +462,7 @@ class minimize_wrapper_with_map():
             geometry_restraints_manager = self.model.get_restraints_manager(),
             rms_bonds_limit             = 0.015,
             rms_angles_limit            = 1.0,
-            ncs_groups                  = ncs_restraints_group_list)
+            ncs_groups                  = ncs_groups)
 
         # division is to put more weight onto restraints. Checked. Works.
         self.w = self.weight.weight/3.0

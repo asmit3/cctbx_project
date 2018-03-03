@@ -1,7 +1,6 @@
 from __future__ import division, print_function
 # LIBTBX_SET_DISPATCHER_NAME phenix.validate_H
 import sys, time
-#from libtbx.utils import Sorry
 from mmtbx.monomer_library.pdb_interpretation import grand_master_phil_str
 import iotbx.phil
 import mmtbx.model
@@ -22,6 +21,7 @@ input_model_fname = None
 
 def master_params():
   return iotbx.phil.parse(master_params_str, process_includes=True)
+
 
 class cl_validate_H():
   def __init__(self, cl_args):
@@ -85,17 +85,21 @@ Usage:
     print('*'*79, file=self.log)
     print('The following atoms were renamed:', file=self.log)
     for entry in renamed:
-      atom = entry['atom']
-      oldname = entry['oldname']
-      newname = atom.name
-      print('Residue %s atom %s --> %s' % \
-        (atom.id_str()[10:-1], oldname, newname), file=self.log)
+      id_str = entry[0]
+      oldname = entry[2]
+      newname = entry[1]
+      print('%s atom %s --> %s' % (id_str, oldname, newname), file=self.log)
 
-  def print_atoms_occ_0(self, hd_atoms_with_occ_0):
-    print('*'*79, file=self.log)
-    print('The following H (or D) atoms have zero occupancy:', file=self.log)
-    for item in hd_atoms_with_occ_0:
-      print(item[0][5:-1])
+  def print_atoms_occ_lt_1(self, hd_atoms_with_occ_0, single_hd_atoms_occ_lt_1):
+    if hd_atoms_with_occ_0:
+      print('*'*79, file=self.log)
+      print('H (or D) atoms with zero occupancy:', file=self.log)
+      for item in hd_atoms_with_occ_0:
+        print(item[0])
+    if single_hd_atoms_occ_lt_1:
+      print('H (or D) atoms with occupancy < 1:', file=self.log)
+      for item in single_hd_atoms_occ_lt_1:
+        print('%s with occupancy %s' %(item[0], item[1]), file=self.log)
 
   def print_results_hd_sites(
         self, hd_exchanged_sites, hd_sites_analysis, overall_counts_hd):
@@ -137,6 +141,25 @@ Usage:
     for item in missing_HD_atoms:
       print('%s : %s ' % (item[0][8:-1], ", ".join(item[1])), file=self.log)
 
+  def print_outliers_bonds_angles(self, outliers_bonds, outliers_angles):
+    print('*'*79, file=self.log)
+    if outliers_bonds:
+      print('BOND OUTLIERS:\n', file=self.log)
+      for item in outliers_bonds:
+        print('Bond %s, observed: %s, delta from target: %s' % \
+          (item[1], item[2], item[3]), file=self.log)
+    if outliers_angles:
+      print('ANGLE OUTLIERS:\n', file=self.log)
+      for item in outliers_angles:
+        print('Angle %s, observed: %s, delta from target: %s' % \
+          (item[1], item[2], item[3]), file=self.log)
+
+  def print_xray_distance_warning(self):
+    print('*'*79, file=self.log)
+    print('WARNING: Model has a majority of X-H bonds with X-ray bond lengths.\n \
+          Input was to use neutron distances. Please check your model carefully.',
+          file=self.log)
+
   def print_results(self, results):
     overall_counts_hd  = results.overall_counts_hd
     hd_exchanged_sites = results.hd_exchanged_sites
@@ -144,24 +167,32 @@ Usage:
     hd_sites_analysis  = results.hd_sites_analysis
     missing_HD_atoms   = results.missing_HD_atoms
     hd_atoms_with_occ_0 = overall_counts_hd.hd_atoms_with_occ_0
+    single_hd_atoms_occ_lt_1 = overall_counts_hd.single_hd_atoms_occ_lt_1
+    outliers_bonds     = results.outliers_bonds
+    outliers_angles    = results.outliers_angles
+    bond_results       = results.bond_results
     if overall_counts_hd:
       self.print_overall_results(overall_counts_hd)
     if renamed:
       self.print_renamed(renamed)
-    if hd_atoms_with_occ_0:
-      self.print_atoms_occ_0(hd_atoms_with_occ_0)
-    if len(list(hd_exchanged_sites.keys())) != 0:
+    if hd_atoms_with_occ_0 or single_hd_atoms_occ_lt_1:
+      self.print_atoms_occ_lt_1(hd_atoms_with_occ_0, single_hd_atoms_occ_lt_1)
+    if hd_exchanged_sites:
       self.print_results_hd_sites(
         hd_exchanged_sites, hd_sites_analysis, overall_counts_hd)
     if missing_HD_atoms:
       self.print_missing_HD_atoms(missing_HD_atoms)
+    if outliers_bonds or outliers_angles:
+      self.print_outliers_bonds_angles(outliers_bonds, outliers_angles)
+    if bond_results.xray_distances_used:
+      self.print_xray_distance_warning()
 
   def get_pdb_interpretation_params(self):
     pdb_interpretation_phil = iotbx.phil.parse(
       input_string = grand_master_phil_str, process_includes = True)
     pi_params = pdb_interpretation_phil.extract()
     pi_params.pdb_interpretation.use_neutron_distances = \
-      self.params.use_neutron_distances
+      self.work_params.use_neutron_distances
     #pi_params.pdb_interpretation.restraints_library.cdl=False
     return pi_params
 
@@ -176,7 +207,8 @@ Usage:
     pi_params = self.get_pdb_interpretation_params()
     model = mmtbx.model.manager(
         model_input               = self.pdb_inp,
-        process_input             = True,
+#        process_input             = True,
+        build_grm                 = True,
         pdb_interpretation_params = pi_params,
         restraint_objects         = self.input_objects.cif_objects)
 
@@ -184,7 +216,8 @@ Usage:
       getattr(self.work_params, self.pdbf_def), file=self.log)
 
     # If needed, this could be wrapped in try...except to catch errors.
-    c = validate_H(model = model)
+    c = validate_H(model = model,
+                   use_neutron_distances = pi_params.pdb_interpretation.use_neutron_distances)
     c.validate_inputs()
     c.run()
     results = c.get_results()

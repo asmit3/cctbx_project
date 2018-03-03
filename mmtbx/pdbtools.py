@@ -1,5 +1,6 @@
 from __future__ import division
 import iotbx.phil
+from cctbx import crystal
 from mmtbx.refinement import rigid_body
 from cctbx.array_family import flex
 from libtbx.utils import Sorry
@@ -157,6 +158,11 @@ truncate_to_polyala = False
   .help = Truncate a model to poly-Ala.
   .short_caption = Truncate to poly-Ala
   .style = noauto
+truncate_to_polygly  = False
+  .type = bool
+  .help = Truncate a model to poly-Gly.
+  .short_caption = Truncate to poly-Gly
+  .style = noauto
 remove_alt_confs = False
   .type = bool
   .help = Deletes atoms whose altloc identifier is not blank or 'A', and \
@@ -240,7 +246,9 @@ class modify(object):
     if(self.log is None): self.log = sys.stdout
     self.xray_structure = xray_structure
     self.params = params
-    asc = self.pdb_hierarchy.atom_selection_cache()
+    asc = self.pdb_hierarchy.atom_selection_cache(
+        special_position_settings=crystal.special_position_settings(
+            crystal_symmetry = self.crystal_symmetry))
     if(self.params.random_seed is not None):
       random.seed(self.params.random_seed)
       flex.set_random_seed(self.params.random_seed)
@@ -265,6 +273,7 @@ class modify(object):
        self.params.convert_met_to_semet or
        self.params.set_charge.charge or
        self.params.truncate_to_polyala or
+       self.params.truncate_to_polygly or
        self.params.remove_alt_confs or
        self.params.move_waters_last or
        self.params.remove_fraction or
@@ -277,6 +286,7 @@ class modify(object):
       self._convert_semet_to_met()
       self._convert_met_to_semet()
       self._set_atomic_charge()
+      self._truncate_to_poly_ala()
       self._truncate_to_poly_gly()
       self._remove_alt_confs()
       self._move_waters()
@@ -289,13 +299,17 @@ class modify(object):
       raise Sorry("'keep' and 'remove' keywords cannot be used simultaneously.")
     s1 = self.pdb_hierarchy.atoms_size()
     if(self.params.remove is not None):
-      asc = self.pdb_hierarchy.atom_selection_cache()
+      asc = self.pdb_hierarchy.atom_selection_cache(
+        special_position_settings=crystal.special_position_settings(
+            crystal_symmetry = self.crystal_symmetry))
       sel = ~asc.selection(self.params.remove)
       self.pdb_hierarchy = self.pdb_hierarchy.select(sel)
       s2 = self.pdb_hierarchy.atoms_size()
       print >> self.log, "Size before:", s1, "size after:", s2
     if(self.params.keep is not None):
-      asc = self.pdb_hierarchy.atom_selection_cache()
+      asc = self.pdb_hierarchy.atom_selection_cache(
+        special_position_settings=crystal.special_position_settings(
+            crystal_symmetry = self.crystal_symmetry))
       sel = asc.selection(self.params.keep)
       self.pdb_hierarchy = self.pdb_hierarchy.select(sel)
       s2 = self.pdb_hierarchy.atoms_size()
@@ -319,7 +333,9 @@ class modify(object):
       if (len(self.pdb_hierarchy.models()) > 1) :
         raise Sorry("Rearranging water molecules is not supported for "+
           "multi-MODEL structures.")
-      sel_cache = self.pdb_hierarchy.atom_selection_cache()
+      sel_cache = self.pdb_hierarchy.atom_selection_cache(
+        special_position_settings=crystal.special_position_settings(
+            crystal_symmetry = self.crystal_symmetry))
       water_sel = sel_cache.selection("resname HOH or resname WAT") # BAD XXX
       n_waters = water_sel.count(True)
       if (n_waters == 0) :
@@ -340,16 +356,23 @@ class modify(object):
         always_keep_one_conformer = self.params.always_keep_one_conformer)
 
   def _truncate_to_poly_gly(self):
-    if(self.params.truncate_to_polyala):
+    if(self.params.truncate_to_polygly):
       print >> self.log, "Truncate to poly-gly"
       self.pdb_hierarchy.truncate_to_poly_gly()
+
+  def _truncate_to_poly_ala(self):
+    if(self.params.truncate_to_polyala):
+      print >> self.log, "Truncate to poly-ala"
+      self.pdb_hierarchy.truncate_to_poly_ala()
 
   def _set_atomic_charge(self):
     if(self.params.set_charge.charge_selection is not None):
       print >> self.log, "Setting atomic charge"
       selection = self.params.set_charge.charge_selection
       charge    = self.params.set_charge.charge
-      sel_cache = self.pdb_hierarchy.atom_selection_cache()
+      sel_cache = self.pdb_hierarchy.atom_selection_cache(
+        special_position_settings=crystal.special_position_settings(
+            crystal_symmetry = self.crystal_symmetry))
       isel = sel_cache.selection(selection).iselection()
       self.pdb_hierarchy.set_atomic_charge(iselection=isel, charge=charge)
 
@@ -372,7 +395,9 @@ class modify(object):
       pdb_hierarchy  = self.pdb_hierarchy
       selected_i_seqs = None
       if (atom_selection is not None) :
-        sel_cache = pdb_hierarchy.atom_selection_cache()
+        sel_cache = pdb_hierarchy.atom_selection_cache(
+        special_position_settings=crystal.special_position_settings(
+            crystal_symmetry = self.crystal_symmetry))
         selected_i_seqs = sel_cache.selection(atom_selection).iselection()
       for model in pdb_hierarchy.models():
         for chain in model.chains():
@@ -431,7 +456,9 @@ class modify(object):
       if (adp.atom_selection is None):
         selection = self.top_selection
       else:
-        asc = self.pdb_hierarchy.atom_selection_cache()
+        asc = self.pdb_hierarchy.atom_selection_cache(
+        special_position_settings=crystal.special_position_settings(
+            crystal_symmetry = self.crystal_symmetry))
         sel = asc.selection(adp.atom_selection)
         selection = flex.smart_selection(flags=sel)
       if (adp.convert_to_isotropic):
@@ -488,7 +515,9 @@ class modify(object):
       if (sites.atom_selection is None):
         selection = self.top_selection
       else:
-        asc = self.pdb_hierarchy.atom_selection_cache()
+        asc = self.pdb_hierarchy.atom_selection_cache(
+        special_position_settings=crystal.special_position_settings(
+            crystal_symmetry = self.crystal_symmetry))
         sel = asc.selection(sites.atom_selection)
         selection = flex.smart_selection(flags=sel)
       self._shake_sites(selection=selection, rms_difference=sites.shake)
@@ -557,7 +586,9 @@ class modify(object):
       if(occ.atom_selection is None):
         selection = self.top_selection
       else:
-        asc = self.pdb_hierarchy.atom_selection_cache()
+        asc = self.pdb_hierarchy.atom_selection_cache(
+        special_position_settings=crystal.special_position_settings(
+            crystal_symmetry = self.crystal_symmetry))
         sel = asc.selection(occ.atom_selection)
         selection = flex.smart_selection(flags=sel)
       if(occ.randomize):

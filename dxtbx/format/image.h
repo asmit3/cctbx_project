@@ -12,7 +12,10 @@
 #define DXTBX_FORMAT_IMAGE_H
 
 #include <vector>
+
 #include <boost/variant.hpp>
+
+#include <dxtbx/error.h>
 #include <scitbx/array_family/tiny.h>
 #include <scitbx/array_family/versa.h>
 #include <scitbx/array_family/shared.h>
@@ -209,11 +212,11 @@ namespace dxtbx { namespace format {
         for (std::size_t i = 0; i < v.n_tiles(); ++i) {
           typedef typename ImageType::tile_type ImageTileType;
           typedef typename ImageType::array_type ArrayType;
-          ArrayType data(v.tile(i).accessor());
-          std::copy(
-              v.tile(i).data().begin(),
-              v.tile(i).data().end(),
-              data.begin());
+          ArrayType data(
+              v.tile(i).accessor(),
+              scitbx::af::init_functor_null<typename ArrayType::value_type>());
+          std::uninitialized_copy(v.tile(i).data().begin(),
+                                  v.tile(i).data().end(), data.begin());
           result.push_back(ImageTileType(data));
         }
         return result;

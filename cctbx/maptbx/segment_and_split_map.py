@@ -22,7 +22,9 @@ master_phil = iotbx.phil.parse("""
                1-letter code, chains separated by \
                blank line or greater-than sign.)  \
                Can have chains that are DNA/RNA/protein and\
-               all can be present in one file.
+               all can be present in one file. \
+               If not supplied, must supply molecular mass or \
+               solvent content.
 
     map_file = None
       .type = path
@@ -89,13 +91,6 @@ master_phil = iotbx.phil.parse("""
       .help = Input NCS with magnification applied.  Only written if\
                 magnification is applied.
       .short_caption = Magnification NCS file
-
-    sharpening_map_file = sharpening_map.ccp4
-      .type = path
-      .help = Input map file with sharpening applied.  Only written if \
-                sharpening is applied.
-      .short_caption = Sharpened map file
-
 
     shifted_map_file = shifted_map.ccp4
       .type = path
@@ -224,12 +219,17 @@ master_phil = iotbx.phil.parse("""
        .help = Unit Cell (used for boxed maps)
        .style = hidden
 
+     molecular_mass = None
+       .type = float
+       .help = Molecular mass of molecule in Da. Used as alternative method \
+                 of specifying solvent content.
+       .short_caption = Molecular mass in Da
+
      solvent_content = None
        .type = float
        .help = Solvent fraction of the cell. Used for ID of \
                solvent content in boxed maps.
        .short_caption = Solvent content
-       .style = hidden
 
      solvent_content_iterations = 3
        .type = int
@@ -306,6 +306,19 @@ master_phil = iotbx.phil.parse("""
        .short_caption = Random points
        .help = Number of random points in map to examine in finding NCS
 
+     identify_ncs_id = True
+       .type = bool
+       .short_caption = Identify NCS ID
+       .help = If NCS is not point-group symmetry, try each possible \
+               operator when evaluating NCS and choose the one that  \
+               results in the most uniform density at NCS-related points.
+
+     min_ncs_cc = 0.75
+       .type = float
+       .short_caption = Minimum NCS CC to keep it
+       .help =  Minimum NCS CC to keep operators when identifying \
+                 automatically
+
      n_rescore = 5
        .type = int
        .short_caption = NCS operators to rescore
@@ -339,7 +352,7 @@ master_phil = iotbx.phil.parse("""
              helical symmetry
       .short_caption = Translation tolerance fractional
 
-    require_helical_or_point_group_symmetry = True
+    require_helical_or_point_group_symmetry = False
       .type = bool
       .help = normally helical or point-group symmetry (or none) is expected. \
              However in some cases (helical + rotational symmetry for \
@@ -565,7 +578,7 @@ master_phil = iotbx.phil.parse("""
        .type = float
        .short_caption = Restrict Z distance for helical symmetry
        .help = Restrict Z distance (+/- this distance from center) \
-              for helical symmetry. 
+              for helical symmetry.
 
      remove_aniso = True
        .type = bool
@@ -680,7 +693,7 @@ master_phil = iotbx.phil.parse("""
        .type = float
        .short_caption = Region weight default
        .help = Region_weight adjusted to be region_weight_default\
-               if no informatino available
+               if no information available
 
      target_b_iso_ratio = 5.9
        .type = float
@@ -779,6 +792,39 @@ master_phil = iotbx.phil.parse("""
   }
 
   segmentation {
+
+    select_au_box = None
+      .type = bool
+      .help = Select box containing at least one representative region of \
+              the map. Also select just NCS operators relevant to that box. \
+              Default is true if number of operators is at least \
+              n_ops_to_use_au_box
+      .short_caption = select au box
+
+    n_ops_to_use_au_box = 20
+      .type = int
+      .help = If number of operators is this big or more and \
+              select_au_box is None, set it to True.
+      .short_caption = N ops to use au_box
+
+    n_au_box = 5
+      .type = int
+      .help = Number of NCS copies to try and get inside au_box
+      .short_caption = N au box
+
+
+    lower_bounds = None
+      .type = ints
+      .help = You can select a part of your map for analysis with \
+              lower_bounds and upper_bounds.
+      .short_caption = Lower bounds
+
+    upper_bounds = None
+      .type = ints
+      .help = You can select a part of your map for analysis with \
+              lower_bounds and upper_bounds.
+      .short_caption = Upper bounds
+
 
     density_select = True
       .type = bool
@@ -975,15 +1021,396 @@ master_phil = iotbx.phil.parse("""
         .short_caption = Sharpen only
         .help = Sharpen map and stop
 
+     check_ncs = None
+       .type = bool
+       .short_caption = Check NCS
+       .help = Check the NCS symmetry by estimating NCS correlation and stop
+
      resolve_size = None
         .type = int
         .help = "Size of resolve to use. "
         .style = hidden
+
+     memory_check = True
+        .type = bool
+        .help = Map-to-model checks to make sure you have enough memory on \
+                  your machine to run.  You can disable this by setting this \
+                  keyword to False. The estimates are approximate so it is \
+                  possible your job could run even if the check fails.  Note \
+                  the check does not take any other uses of the memory on \
+                  your machine into account.
+        .short_caption = Memory check
+
    }
 """, process_includes=True)
 master_params = master_phil
 
-# Symmetry for icosahedron in 2 settings
+# Symmetry for icosahedron in 3 settings
+
+# First is as ncs_spec file; the other 2 are as BIOMTR records
+icosahedral_text_3=\
+"""
+new_operator
+rota_matrix    1.0000    0.0000    0.0000
+rota_matrix    0.0000    1.0000    0.0000
+rota_matrix    0.0000    0.0000    1.0000
+tran_orth     0.0000    0.0000    0.0000
+center_orth  -14.5127   20.8478  102.7355
+new_operator
+rota_matrix    0.5000    0.8090   -0.3090
+rota_matrix   -0.8090    0.3090   -0.5000
+rota_matrix   -0.3090    0.5000    0.8090
+tran_orth    -0.0000    0.0000   -0.0000
+center_orth  -55.8696   46.0690   77.1756
+new_operator
+rota_matrix   -0.3090    0.5000   -0.8090
+rota_matrix   -0.5000   -0.8090   -0.3090
+rota_matrix   -0.8090    0.3090    0.5000
+tran_orth     0.0000   -0.0000    0.0000
+center_orth  -89.0540    7.6245   56.6665
+new_operator
+rota_matrix   -0.3090   -0.5000   -0.8090
+rota_matrix    0.5000   -0.8090    0.3090
+rota_matrix   -0.8090   -0.3090    0.5000
+tran_orth    -0.0000    0.0000   -0.0000
+center_orth  -68.2062  -41.3569   69.5511
+new_operator
+rota_matrix    0.5000   -0.8090   -0.3090
+rota_matrix    0.8090    0.3090    0.5000
+rota_matrix   -0.3090   -0.5000    0.8090
+tran_orth    -0.0000   -0.0000   -0.0000
+center_orth  -22.1372  -33.1844   98.0233
+new_operator
+rota_matrix   -1.0000    0.0000    0.0000
+rota_matrix    0.0000   -1.0000    0.0000
+rota_matrix    0.0000    0.0000    1.0000
+tran_orth     0.0000    0.0000    0.0000
+center_orth   14.5127  -20.8478  102.7355
+new_operator
+rota_matrix   -0.5000   -0.8090   -0.3090
+rota_matrix    0.8090   -0.3090   -0.5000
+rota_matrix    0.3090   -0.5000    0.8090
+tran_orth    -0.0000    0.0000   -0.0000
+center_orth   55.8696  -46.0690   77.1756
+new_operator
+rota_matrix    0.3090   -0.5000   -0.8090
+rota_matrix    0.5000    0.8090   -0.3090
+rota_matrix    0.8090   -0.3090    0.5000
+tran_orth     0.0000   -0.0000    0.0000
+center_orth   89.0540   -7.6245   56.6665
+new_operator
+rota_matrix    0.3090    0.5000   -0.8090
+rota_matrix   -0.5000    0.8090    0.3090
+rota_matrix    0.8090    0.3090    0.5000
+tran_orth    -0.0000    0.0000   -0.0000
+center_orth   68.2062   41.3569   69.5511
+new_operator
+rota_matrix   -0.5000    0.8090   -0.3090
+rota_matrix   -0.8090   -0.3090    0.5000
+rota_matrix    0.3090    0.5000    0.8090
+tran_orth    -0.0000   -0.0000   -0.0000
+center_orth   22.1372   33.1844   98.0233
+new_operator
+rota_matrix    1.0000    0.0000    0.0000
+rota_matrix    0.0000   -1.0000    0.0000
+rota_matrix    0.0000    0.0000   -1.0000
+tran_orth     0.0000    0.0000    0.0000
+center_orth  -14.5127  -20.8478  -102.7355
+new_operator
+rota_matrix    0.5000   -0.8090    0.3090
+rota_matrix   -0.8090   -0.3090    0.5000
+rota_matrix   -0.3090   -0.5000   -0.8090
+tran_orth    -0.0000    0.0000   -0.0000
+center_orth  -55.8696  -46.0690  -77.1756
+new_operator
+rota_matrix   -0.3090   -0.5000    0.8090
+rota_matrix   -0.5000    0.8090    0.3090
+rota_matrix   -0.8090   -0.3090   -0.5000
+tran_orth     0.0000   -0.0000    0.0000
+center_orth  -89.0540   -7.6245  -56.6665
+new_operator
+rota_matrix   -0.3090    0.5000    0.8090
+rota_matrix    0.5000    0.8090   -0.3090
+rota_matrix   -0.8090    0.3090   -0.5000
+tran_orth    -0.0000    0.0000   -0.0000
+center_orth  -68.2062   41.3569  -69.5511
+new_operator
+rota_matrix    0.5000    0.8090    0.3090
+rota_matrix    0.8090   -0.3090   -0.5000
+rota_matrix   -0.3090    0.5000   -0.8090
+tran_orth    -0.0000   -0.0000   -0.0000
+center_orth  -22.1372   33.1844  -98.0233
+new_operator
+rota_matrix   -1.0000    0.0000    0.0000
+rota_matrix    0.0000    1.0000    0.0000
+rota_matrix    0.0000    0.0000   -1.0000
+tran_orth     0.0000    0.0000    0.0000
+center_orth   14.5127   20.8478  -102.7355
+new_operator
+rota_matrix   -0.5000    0.8090    0.3090
+rota_matrix    0.8090    0.3090    0.5000
+rota_matrix    0.3090    0.5000   -0.8090
+tran_orth    -0.0000    0.0000   -0.0000
+center_orth   55.8696   46.0690  -77.1756
+new_operator
+rota_matrix    0.3090    0.5000    0.8090
+rota_matrix    0.5000   -0.8090    0.3090
+rota_matrix    0.8090    0.3090   -0.5000
+tran_orth     0.0000   -0.0000    0.0000
+center_orth   89.0540    7.6245  -56.6665
+new_operator
+rota_matrix    0.3090   -0.5000    0.8090
+rota_matrix   -0.5000   -0.8090   -0.3090
+rota_matrix    0.8090   -0.3090   -0.5000
+tran_orth    -0.0000    0.0000   -0.0000
+center_orth   68.2062  -41.3569  -69.5511
+new_operator
+rota_matrix   -0.5000   -0.8090    0.3090
+rota_matrix   -0.8090    0.3090   -0.5000
+rota_matrix    0.3090   -0.5000   -0.8090
+tran_orth    -0.0000   -0.0000   -0.0000
+center_orth   22.1372  -33.1844  -98.0233
+new_operator
+rota_matrix   -0.0000   -0.0000   -1.0000
+rota_matrix   -1.0000    0.0000   -0.0000
+rota_matrix    0.0000    1.0000   -0.0000
+tran_orth     0.0000   -0.0000    0.0000
+center_orth  -20.8478  102.7355   14.5127
+new_operator
+rota_matrix   -0.8090   -0.3090   -0.5000
+rota_matrix   -0.3090   -0.5000    0.8090
+rota_matrix   -0.5000    0.8090    0.3090
+tran_orth    -0.0000    0.0000   -0.0000
+center_orth  -46.0690   77.1756   55.8696
+new_operator
+rota_matrix   -0.5000   -0.8090    0.3090
+rota_matrix    0.8090   -0.3090    0.5000
+rota_matrix   -0.3090    0.5000    0.8090
+tran_orth     0.0000   -0.0000    0.0000
+center_orth   -7.6245   56.6665   89.0540
+new_operator
+rota_matrix    0.5000   -0.8090    0.3090
+rota_matrix    0.8090    0.3090   -0.5000
+rota_matrix    0.3090    0.5000    0.8090
+tran_orth    -0.0000    0.0000   -0.0000
+center_orth   41.3569   69.5511   68.2062
+new_operator
+rota_matrix    0.8090   -0.3090   -0.5000
+rota_matrix   -0.3090    0.5000   -0.8090
+rota_matrix    0.5000    0.8090    0.3090
+tran_orth    -0.0000   -0.0000   -0.0000
+center_orth   33.1844   98.0233   22.1372
+new_operator
+rota_matrix    0.0000    0.0000    1.0000
+rota_matrix    1.0000    0.0000    0.0000
+rota_matrix   -0.0000    1.0000    0.0000
+tran_orth     0.0000   -0.0000    0.0000
+center_orth   20.8478  102.7355  -14.5127
+new_operator
+rota_matrix    0.8090   -0.3090    0.5000
+rota_matrix    0.3090   -0.5000   -0.8090
+rota_matrix    0.5000    0.8090   -0.3090
+tran_orth    -0.0000    0.0000   -0.0000
+center_orth   46.0690   77.1756  -55.8696
+new_operator
+rota_matrix    0.5000   -0.8090   -0.3090
+rota_matrix   -0.8090   -0.3090   -0.5000
+rota_matrix    0.3090    0.5000   -0.8090
+tran_orth     0.0000   -0.0000    0.0000
+center_orth    7.6245   56.6665  -89.0540
+new_operator
+rota_matrix   -0.5000   -0.8090   -0.3090
+rota_matrix   -0.8090    0.3090    0.5000
+rota_matrix   -0.3090    0.5000   -0.8090
+tran_orth    -0.0000    0.0000   -0.0000
+center_orth  -41.3569   69.5511  -68.2062
+new_operator
+rota_matrix   -0.8090   -0.3090    0.5000
+rota_matrix    0.3090    0.5000    0.8090
+rota_matrix   -0.5000    0.8090   -0.3090
+tran_orth    -0.0000   -0.0000   -0.0000
+center_orth  -33.1844   98.0233  -22.1372
+new_operator
+rota_matrix   -0.0000   -0.0000   -1.0000
+rota_matrix    1.0000   -0.0000   -0.0000
+rota_matrix   -0.0000   -1.0000    0.0000
+tran_orth    -0.0000   -0.0000   -0.0000
+center_orth   20.8478  -102.7355   14.5127
+new_operator
+rota_matrix    0.8090    0.3090   -0.5000
+rota_matrix    0.3090    0.5000    0.8090
+rota_matrix    0.5000   -0.8090    0.3090
+tran_orth    -0.0000    0.0000   -0.0000
+center_orth   46.0690  -77.1756   55.8696
+new_operator
+rota_matrix    0.5000    0.8090    0.3090
+rota_matrix   -0.8090    0.3090    0.5000
+rota_matrix    0.3090   -0.5000    0.8090
+tran_orth     0.0000   -0.0000    0.0000
+center_orth    7.6245  -56.6665   89.0540
+new_operator
+rota_matrix   -0.5000    0.8090    0.3090
+rota_matrix   -0.8090   -0.3090   -0.5000
+rota_matrix   -0.3090   -0.5000    0.8090
+tran_orth    -0.0000    0.0000   -0.0000
+center_orth  -41.3569  -69.5511   68.2062
+new_operator
+rota_matrix   -0.8090    0.3090   -0.5000
+rota_matrix    0.3090   -0.5000   -0.8090
+rota_matrix   -0.5000   -0.8090    0.3090
+tran_orth    -0.0000   -0.0000   -0.0000
+center_orth  -33.1844  -98.0233   22.1372
+new_operator
+rota_matrix   -0.0000    0.0000    1.0000
+rota_matrix   -1.0000   -0.0000   -0.0000
+rota_matrix    0.0000   -1.0000   -0.0000
+tran_orth    -0.0000   -0.0000    0.0000
+center_orth  -20.8478  -102.7355  -14.5127
+new_operator
+rota_matrix   -0.8090    0.3090    0.5000
+rota_matrix   -0.3090    0.5000   -0.8090
+rota_matrix   -0.5000   -0.8090   -0.3090
+tran_orth    -0.0000    0.0000   -0.0000
+center_orth  -46.0690  -77.1756  -55.8696
+new_operator
+rota_matrix   -0.5000    0.8090   -0.3090
+rota_matrix    0.8090    0.3090   -0.5000
+rota_matrix   -0.3090   -0.5000   -0.8090
+tran_orth     0.0000   -0.0000    0.0000
+center_orth   -7.6245  -56.6665  -89.0540
+new_operator
+rota_matrix    0.5000    0.8090   -0.3090
+rota_matrix    0.8090   -0.3090    0.5000
+rota_matrix    0.3090   -0.5000   -0.8090
+tran_orth    -0.0000    0.0000   -0.0000
+center_orth   41.3569  -69.5511  -68.2062
+new_operator
+rota_matrix    0.8090    0.3090    0.5000
+rota_matrix   -0.3090   -0.5000    0.8090
+rota_matrix    0.5000   -0.8090   -0.3090
+tran_orth    -0.0000   -0.0000   -0.0000
+center_orth   33.1844  -98.0233  -22.1372
+new_operator
+rota_matrix   -0.0000   -1.0000    0.0000
+rota_matrix    0.0000    0.0000    1.0000
+rota_matrix   -1.0000    0.0000    0.0000
+tran_orth    -0.0000    0.0000   -0.0000
+center_orth  -102.7355   14.5127   20.8478
+new_operator
+rota_matrix    0.3090   -0.5000    0.8090
+rota_matrix    0.5000    0.8090    0.3090
+rota_matrix   -0.8090    0.3090    0.5000
+tran_orth    -0.0000    0.0000   -0.0000
+center_orth  -77.1756   55.8696   46.0690
+new_operator
+rota_matrix    0.8090    0.3090    0.5000
+rota_matrix    0.3090    0.5000   -0.8090
+rota_matrix   -0.5000    0.8090    0.3090
+tran_orth     0.0000   -0.0000    0.0000
+center_orth  -56.6665   89.0540    7.6245
+new_operator
+rota_matrix    0.8090    0.3090   -0.5000
+rota_matrix   -0.3090   -0.5000   -0.8090
+rota_matrix   -0.5000    0.8090   -0.3090
+tran_orth    -0.0000    0.0000   -0.0000
+center_orth  -69.5511   68.2062  -41.3569
+new_operator
+rota_matrix    0.3090   -0.5000   -0.8090
+rota_matrix   -0.5000   -0.8090    0.3090
+rota_matrix   -0.8090    0.3090   -0.5000
+tran_orth    -0.0000   -0.0000   -0.0000
+center_orth  -98.0233   22.1372  -33.1844
+new_operator
+rota_matrix   -0.0000    1.0000    0.0000
+rota_matrix    0.0000    0.0000   -1.0000
+rota_matrix   -1.0000   -0.0000   -0.0000
+tran_orth    -0.0000    0.0000   -0.0000
+center_orth  -102.7355  -14.5127  -20.8478
+new_operator
+rota_matrix    0.3090    0.5000   -0.8090
+rota_matrix    0.5000   -0.8090   -0.3090
+rota_matrix   -0.8090   -0.3090   -0.5000
+tran_orth    -0.0000    0.0000   -0.0000
+center_orth  -77.1756  -55.8696  -46.0690
+new_operator
+rota_matrix    0.8090   -0.3090   -0.5000
+rota_matrix    0.3090   -0.5000    0.8090
+rota_matrix   -0.5000   -0.8090   -0.3090
+tran_orth     0.0000   -0.0000    0.0000
+center_orth  -56.6665  -89.0540   -7.6245
+new_operator
+rota_matrix    0.8090   -0.3090    0.5000
+rota_matrix   -0.3090    0.5000    0.8090
+rota_matrix   -0.5000   -0.8090    0.3090
+tran_orth    -0.0000    0.0000   -0.0000
+center_orth  -69.5511  -68.2062   41.3569
+new_operator
+rota_matrix    0.3090    0.5000    0.8090
+rota_matrix   -0.5000    0.8090   -0.3090
+rota_matrix   -0.8090   -0.3090    0.5000
+tran_orth    -0.0000   -0.0000   -0.0000
+center_orth  -98.0233  -22.1372   33.1844
+new_operator
+rota_matrix    0.0000   -1.0000    0.0000
+rota_matrix   -0.0000   -0.0000   -1.0000
+rota_matrix    1.0000    0.0000   -0.0000
+tran_orth    -0.0000    0.0000   -0.0000
+center_orth  102.7355   14.5127  -20.8478
+new_operator
+rota_matrix   -0.3090   -0.5000   -0.8090
+rota_matrix   -0.5000    0.8090   -0.3090
+rota_matrix    0.8090    0.3090   -0.5000
+tran_orth    -0.0000    0.0000   -0.0000
+center_orth   77.1756   55.8696  -46.0690
+new_operator
+rota_matrix   -0.8090    0.3090   -0.5000
+rota_matrix   -0.3090    0.5000    0.8090
+rota_matrix    0.5000    0.8090   -0.3090
+tran_orth     0.0000   -0.0000    0.0000
+center_orth   56.6665   89.0540   -7.6245
+new_operator
+rota_matrix   -0.8090    0.3090    0.5000
+rota_matrix    0.3090   -0.5000    0.8090
+rota_matrix    0.5000    0.8090    0.3090
+tran_orth    -0.0000    0.0000   -0.0000
+center_orth   69.5511   68.2062   41.3569
+new_operator
+rota_matrix   -0.3090   -0.5000    0.8090
+rota_matrix    0.5000   -0.8090   -0.3090
+rota_matrix    0.8090    0.3090    0.5000
+tran_orth    -0.0000   -0.0000   -0.0000
+center_orth   98.0233   22.1372   33.1844
+new_operator
+rota_matrix   -0.0000    1.0000    0.0000
+rota_matrix   -0.0000   -0.0000    1.0000
+rota_matrix    1.0000    0.0000    0.0000
+tran_orth     0.0000    0.0000    0.0000
+center_orth  102.7355  -14.5127   20.8478
+new_operator
+rota_matrix   -0.3090    0.5000    0.8090
+rota_matrix   -0.5000   -0.8090    0.3090
+rota_matrix    0.8090   -0.3090    0.5000
+tran_orth    -0.0000    0.0000   -0.0000
+center_orth   77.1756  -55.8696   46.0690
+new_operator
+rota_matrix   -0.8090   -0.3090    0.5000
+rota_matrix   -0.3090   -0.5000   -0.8090
+rota_matrix    0.5000   -0.8090    0.3090
+tran_orth     0.0000   -0.0000    0.0000
+center_orth   56.6665  -89.0540    7.6245
+new_operator
+rota_matrix   -0.8090   -0.3090   -0.5000
+rota_matrix    0.3090    0.5000   -0.8090
+rota_matrix    0.5000   -0.8090   -0.3090
+tran_orth    -0.0000    0.0000   -0.0000
+center_orth   69.5511  -68.2062  -41.3569
+new_operator
+rota_matrix   -0.3090    0.5000   -0.8090
+rota_matrix    0.5000    0.8090    0.3090
+rota_matrix    0.8090   -0.3090   -0.5000
+tran_orth    -0.0000   -0.0000   -0.0000
+center_orth   98.0233  -22.1372  -33.1844
+"""
 
 icosahedral_text_2=\
 """
@@ -2476,7 +2903,7 @@ def get_map_object(file_name=None,out=sys.stdout):
   # read a ccp4 map file and return sg,cell and map objects 2012-01-16
   from iotbx import ccp4_map
   if not os.path.isfile(file_name):
-    raise Sorry("The map file %s is missing..." %(file_name))  
+    raise Sorry("The map file %s is missing..." %(file_name))
   m = ccp4_map.map_reader(file_name=file_name)
   print >>out,"MIN MAX MEAN RMS of map: %7.2f %7.2f  %7.2f  %7.2f " %(
       m.header_min, m.header_max, m.header_mean, m.header_rms)
@@ -2816,7 +3243,7 @@ def get_map_from_map_coeffs(map_coeffs=None,crystal_symmetry=None,
     map_data=fft_map.real_map_unpadded()
     return map_data
 
-def find_ncs_center(map_data,crystal_symmetry=None):
+def find_ncs_center(map_data,crystal_symmetry=None,out=sys.stdout):
   # find center if necessary:
   origin=list(map_data.origin())
   all=list(map_data.all())
@@ -2843,11 +3270,11 @@ def find_ncs_center(map_data,crystal_symmetry=None):
       centroid_w[ai]+=mean_value
     if centroid_w[ai]>0:
       centroid_wx[ai]=centroid_wx[ai]/centroid_w[ai]
-  print "CENTROID OF DENSITY: (%7.2f, %7.2f, %7.2f) (grid units) " %(
+  print >>out,"CENTROID OF DENSITY: (%7.2f, %7.2f, %7.2f) (grid units) " %(
     tuple((centroid_wx[0],centroid_wx[1],centroid_wx[2],)))
   xyz_fract=matrix.col((centroid_wx[0]/all[0],centroid_wx[1]/all[1],centroid_wx[2]/all[2],))
   xyz_cart=crystal_symmetry.unit_cell().orthogonalize(xyz_fract)
-  print "CENTROID (A): (%7.3f, %7.3f, %7.3f) " %(
+  print >>out,"CENTROID (A): (%7.3f, %7.3f, %7.3f) " %(
     tuple(xyz_cart))
   return xyz_cart
 
@@ -2857,6 +3284,54 @@ def get_center_of_map(map_data,crystal_symmetry):
   sx,sy,sz=[all[0]/2+origin[0],all[1]/2+origin[1],all[2]/2+origin[2]]
   site_fract=matrix.col((sx/all[0],sy/all[1],sz/all[2],))
   return crystal_symmetry.unit_cell().orthogonalize(site_fract)
+
+
+def select_remaining_ncs_ops( map_data=None,
+    crystal_symmetry=None,
+    random_points=None,
+    closest_sites=None,
+    ncs_object=None,
+    out=sys.stdout):
+
+  # identify which NCS ops still apply.  Choose the ones that maximize
+  # scoring with score_ncs_in_map
+
+  used_ncs_id_list=[ncs_object.ncs_groups()[0].identity_op_id()]
+  ncs_copies=ncs_object.max_operators()
+
+  # find ncs_id that maximizes score (if any)
+  improving=True
+  from copy import deepcopy
+  best_ops_to_keep=deepcopy(used_ncs_id_list)
+  working_best_ops_to_keep=None
+  best_score=None
+
+  while improving:
+    improving=False
+    working_best_ops_to_keep=deepcopy(best_ops_to_keep)
+    working_score=None
+    for ncs_id in xrange(ncs_copies):
+      if ncs_id in best_ops_to_keep:continue
+      ops_to_keep=deepcopy(best_ops_to_keep)
+      ops_to_keep.append(ncs_id)
+      ncs_used_obj=ncs_object.deep_copy(ops_to_keep=ops_to_keep)
+      score,ncs_cc=score_ncs_in_map(map_data=map_data,ncs_object=ncs_used_obj,
+        ncs_in_cell_only=True,
+        allow_score_with_pg=False,
+        sites_orth=closest_sites,
+        crystal_symmetry=crystal_symmetry,out=null_out())
+      if score is None: continue
+      if working_score is None or score >working_score:
+        working_score=score
+        working_best_ops_to_keep=deepcopy(ops_to_keep)
+    if working_score is not None and (
+        best_score is None or working_score>best_score):
+      improving=True
+      best_score=working_score
+      best_ops_to_keep=deepcopy(working_best_ops_to_keep)
+
+  ncs_used_obj=ncs_object.deep_copy(ops_to_keep=best_ops_to_keep)
+  return ncs_used_obj
 
 def get_ncs_from_map(map_data=None,
       map_ncs_center=None,
@@ -2868,10 +3343,14 @@ def get_ncs_from_map(map_data=None,
       op_max=None,
       crystal_symmetry=None,
       optimize_center=None,
+      sites_orth=None,
       random_points=None,
       n_rescore=None,
       use_center_of_map_as_center=None,
-      min_ncs_cc=0.90,
+      min_ncs_cc=None,
+      identify_ncs_id=None,
+      ncs_obj_to_check=None,
+      ncs_in_cell_only=False,
       out=sys.stdout):
 
   # Purpose: check through standard point groups and helical symmetry to see
@@ -2882,6 +3361,10 @@ def get_ncs_from_map(map_data=None,
   # Center of symmetry is as supplied, or center of map or center of density
   #  If center is not supplied and use_center_of_map_as_center, try that
   #  and return None if it fails to achieve a map cc of min_ncs_cc
+
+  # if ncs_obj_to_check is supplied...just use that ncs
+  if ncs_obj_to_check:
+    ncs_type="SUPPLIED NCS"
 
   if optimize_center is None:
     if ncs_center is None and (not use_center_of_map_as_center):
@@ -2896,8 +3379,10 @@ def get_ncs_from_map(map_data=None,
     print >>out,"Using center of map as NCS center"
     ncs_center=map_ncs_center
   else: # Find it
-    print >>out,"Finding NCS center as it is not supplied"
-    ncs_center=find_ncs_center(map_data,crystal_symmetry=crystal_symmetry)
+    if not ncs_obj_to_check:
+      print >>out,"Finding NCS center as it is not supplied"
+    ncs_center=find_ncs_center(map_data,crystal_symmetry=crystal_symmetry,
+       out=out)
   print >>out,"Center of NCS (A): (%7.3f, %7.3f, %7.3f) " %(
     tuple(ncs_center))
 
@@ -2909,11 +3394,14 @@ def get_ncs_from_map(map_data=None,
    two_fold_along_x=two_fold_along_x,
    op_max=op_max,
    helical_trans_z_angstrom=helical_trans_z_angstrom,
+   ncs_obj_to_check=ncs_obj_to_check,
    out=out,
    )
 
   print >>out,"Total of %d NCS types to examine..." %(len(ncs_list))
-  sites_orth=get_points_in_map(map_data,n=random_points,crystal_symmetry=crystal_symmetry)
+  if not sites_orth:
+    sites_orth=get_points_in_map(
+     map_data,n=random_points,crystal_symmetry=crystal_symmetry)
   # some random points in the map
 
   # Now make sure symmetry applied to points in points_list gives similar values
@@ -2921,19 +3409,21 @@ def get_ncs_from_map(map_data=None,
   results_list=[]
   for ncs_obj,ncs_type in zip(ncs_list,ncs_type_list):
     score,cc_avg=score_ncs_in_map(map_data=map_data,ncs_object=ncs_obj,
+       identify_ncs_id=identify_ncs_id,
+       ncs_in_cell_only=ncs_in_cell_only,
       sites_orth=sites_orth,crystal_symmetry=crystal_symmetry,out=out)
     if score is None:
       print >>out,"ncs_type:",ncs_type," no score",ncs_obj.max_operators()
     else:
       results_list.append([score,cc_avg,ncs_obj,ncs_type])
   if not results_list:
-    return None
+    return None,None,None
 
   results_list.sort()
   results_list.reverse()
 
   # Rescore top n_rescore
-  if n_rescore:
+  if n_rescore and not ncs_obj_to_check:
     print >>out,"Rescoring top %d results" %(min(n_rescore,len(results_list)))
     rescore_list=results_list[n_rescore:]
     new_sites_orth=get_points_in_map(
@@ -2941,6 +3431,8 @@ def get_ncs_from_map(map_data=None,
     new_sites_orth.extend(sites_orth)
     for orig_score,orig_cc_avg,ncs_obj,ncs_type in results_list[:n_rescore]:
       score,cc_avg=score_ncs_in_map(map_data=map_data,ncs_object=ncs_obj,
+        identify_ncs_id=identify_ncs_id,
+        ncs_in_cell_only=ncs_in_cell_only,
         sites_orth=new_sites_orth,crystal_symmetry=crystal_symmetry,out=out)
       if score is None:
         print >>out,"ncs_type:",ncs_type," no score",ncs_obj.max_operators()
@@ -2960,24 +3452,28 @@ def get_ncs_from_map(map_data=None,
 
   # Optimize center if necessary
   if optimize_center:
-    ncs_center,cc_avg,score,ncs_obj=optimize_center_position(map_data,sites_orth,
+    ncs_center,cc_avg,score,ncs_obj=optimize_center_position(
+       map_data,sites_orth,
        crystal_symmetry,
        ncs_info,ncs_center,ncs_obj,score,cc_avg,
        helical_rot_deg=helical_rot_deg,
        two_fold_along_x=two_fold_along_x,
        op_max=op_max,
+       identify_ncs_id=identify_ncs_id,
+       ncs_obj_to_check=ncs_obj_to_check,
+       ncs_in_cell_only=ncs_in_cell_only,
        helical_trans_z_angstrom=helical_trans_z_angstrom,out=out)
     print >>out,"New center: (%7.3f, %7.3f, %7.3f)" %(tuple(ncs_center))
 
   if cc_avg < min_ncs_cc:
     print >>out,"No suitable symmetry found with center of map as center...\n"
-    return None
+    return None,None,None
 
   print >>out,"\nBest NCS type is: ",
   print >>out,"\n  SCORE    CC   OPERATORS     SYMMETRY"
   print >>out," %6.2f  %5.2f    %2d          %s" %(
        score,cc_avg,ncs_obj.max_operators(), ncs_info.strip(),)
-  return ncs_obj
+  return ncs_obj,cc_avg,score
 
 
 def optimize_center_position(map_data,sites_orth,crystal_symmetry,
@@ -2985,6 +3481,9 @@ def optimize_center_position(map_data,sites_orth,crystal_symmetry,
      helical_rot_deg=None,
      two_fold_along_x=None,
      op_max=None,
+     identify_ncs_id=None,
+     ncs_obj_to_check=None,
+     ncs_in_cell_only=None,
      helical_trans_z_angstrom=None,out=sys.stdout):
 
   ncs_type=ncs_info.split()[0]
@@ -3015,11 +3514,19 @@ def optimize_center_position(map_data,sites_orth,crystal_symmetry,
        two_fold_along_x=two_fold_along_x,
        op_max=op_max,
        helical_trans_z_angstrom=helical_trans_z_angstrom,
+       ncs_obj_to_check=ncs_obj_to_check,
        out=null_out(),
        )
-      ncs_obj=ncs_list[0]
-      score,cc_avg=score_ncs_in_map(map_data=map_data,ncs_object=ncs_obj,
+      if ncs_list:
+        ncs_obj=ncs_list[0]
+        score,cc_avg=score_ncs_in_map(map_data=map_data,ncs_object=ncs_obj,
+          identify_ncs_id=identify_ncs_id,
+          ncs_in_cell_only=ncs_in_cell_only,
           sites_orth=sites_orth,crystal_symmetry=crystal_symmetry,out=out)
+      else:
+        ncs_obj=None
+        score,cc_avg=None,None
+
       if best_score is None or score>best_score:
         best_cc_avg=cc_avg
         best_score=score
@@ -3033,8 +3540,8 @@ def optimize_center_position(map_data,sites_orth,crystal_symmetry,
   return best_center,best_cc_avg,best_score,best_ncs_obj
 
 
-
-def score_ncs_in_map(map_data=None,ncs_object=None,sites_orth=None,
+def score_ncs_in_map_point_group_symmetry(
+    map_data=None,ncs_object=None,sites_orth=None,
      crystal_symmetry=None,out=sys.stdout):
   ncs_group=ncs_object.ncs_groups()[0]
   all_value_lists=[]
@@ -3051,6 +3558,9 @@ def score_ncs_in_map(map_data=None,ncs_object=None,sites_orth=None,
     for site_fract in new_sites_fract:
       values.append(map_data.value_at_closest_grid_point(site_fract))
     all_value_lists.append(values)
+  return get_cc_among_value_lists(all_value_lists)
+
+def get_cc_among_value_lists(all_value_lists):
   a=all_value_lists[0]
   cc_avg=0.
   cc_low=None
@@ -3069,22 +3579,120 @@ def score_ncs_in_map(map_data=None,ncs_object=None,sites_orth=None,
   else:
     return None,None
 
+def score_ncs_in_map(map_data=None,ncs_object=None,sites_orth=None,
+     identify_ncs_id=None,
+     ncs_in_cell_only=None,
+     allow_score_with_pg=True,
+     crystal_symmetry=None,out=sys.stdout):
 
-def get_points_in_map(map_data,n=None,max_tries_ratio=100,crystal_symmetry=None):
+  if not ncs_object or ncs_object.max_operators()<2:
+    return None,None
+
+  ncs_group=ncs_object.ncs_groups()[0]
+      # don't use point-group symmetry if we have only some of the ops
+  if allow_score_with_pg and (
+     (not identify_ncs_id) or ncs_group.is_point_group_symmetry()):
+    return score_ncs_in_map_point_group_symmetry(
+     map_data=map_data,ncs_object=ncs_object,
+     sites_orth=sites_orth,crystal_symmetry=crystal_symmetry,out=out)
+
+        # This version does not assume point-group symmetry: find the NCS
+        #  operator that maps each point on to all others the best, then save
+  #  that list of values
+
+  identify_ncs_id_list=list(xrange(ncs_group.n_ncs_oper()))+[None]
+
+  all_value_lists=[]
+
+  if not sites_orth:
+    sites_orth=get_points_in_map(map_data,n=100,
+    minimum_fraction_of_max=0.05,
+    crystal_symmetry=crystal_symmetry)
+
+  for site in sites_orth:
+    best_id=0
+    best_score=None
+    best_values=None
+    for site_ncs_id in identify_ncs_id_list:  #last is real one
+      if site_ncs_id is None:
+        site_ncs_id=best_id
+        real_thing=True
+      else:
+        real_thing=False
+
+      if identify_ncs_id and site_ncs_id:
+        local_site=ncs_group.rota_matrices()[site_ncs_id] * matrix.col(site) + \
+           ncs_group.translations_orth()[site_ncs_id]
+      else:
+        local_site=site
+      new_sites_cart=flex.vec3_double()
+      for c,t,r in zip(ncs_group.centers(),
+                       ncs_group.translations_orth(),
+                       ncs_group.rota_matrices()):
+        r_inv=r.inverse()
+        new_sites_cart.append(r_inv * (matrix.col(local_site) - t))
+      new_sites_fract=crystal_symmetry.unit_cell().fractionalize(
+         new_sites_cart)
+      values=flex.double()
+      for site_frac in new_sites_fract:
+        if (not ncs_in_cell_only) or (
+              site_frac[0]>=0 and site_frac[0]<=1 and  \
+              site_frac[1]>=0 and site_frac[1]<=1 and  \
+              site_frac[2]>=0 and site_frac[2]<=1):
+          values.append(map_data.value_at_closest_grid_point(site_frac))
+        else:
+          values.append(0.)
+
+      score=values.standard_deviation_of_the_sample()
+      if real_thing or (best_score is None or score < best_score):
+          best_score=score
+          best_id=site_ncs_id
+          best_values=values
+    all_value_lists.append(best_values)
+
+  values_by_site_dict={} # all_value_lists[j][i] -> values_by_site_dict[i][j]
+  # there are sites_orth.size() values of j
+  # there are len(ncs_group_centers)==len(all_value_lists[0]) values of i
+  for i in xrange(len(all_value_lists[0])):
+    values_by_site_dict[i]=flex.double() # value_list[0][1]
+    for j in xrange(sites_orth.size()):
+      values_by_site_dict[i].append(all_value_lists[j][i])
+  new_all_values_lists=[]
+  for i in xrange(len(all_value_lists[0])):
+    new_all_values_lists.append(values_by_site_dict[i])
+  return get_cc_among_value_lists(new_all_values_lists)
+
+def get_points_in_map(map_data,n=None,
+      minimum_fraction_of_max=0.,
+      random_xyz=None,
+      max_tries_ratio=100,crystal_symmetry=None):
   map_1d=map_data.as_1d()
   map_mean=map_1d.min_max_mean().mean
   map_max=map_1d.min_max_mean().max
+  minimum_value=map_mean+minimum_fraction_of_max*(map_max-map_mean)
   points_list=flex.vec3_double()
   import random
+  random.seed(1)
+
   nu,nv,nw=map_data.all()
-  xyz_fract=crystal_symmetry.unit_cell().fractionalize(tuple((17.4,27.40128571,27.32985714,)))
+  xyz_fract=crystal_symmetry.unit_cell().fractionalize(
+       tuple((17.4,27.40128571,27.32985714,)))
   for i in xrange(int(max_tries_ratio*n)): # max tries
     ix=random.randint(0,nu-1)
     iy=random.randint(0,nv-1)
     iz=random.randint(0,nw-1)
     xyz_fract=matrix.col((ix/nu,iy/nv,iz/nw,))
     value=map_data.value_at_closest_grid_point(xyz_fract)
-    if value > map_mean and value <map_max:
+    if value > minimum_value and value <map_max:
+      if random_xyz:
+         offset=[]
+         for i in xrange(3):
+           offset.append((random.random()-0.5)*2.*random_xyz)
+         offset=crystal_symmetry.unit_cell().fractionalize(matrix.col(offset))
+         new_xyz_fract=[]
+         for x,o in zip(xyz_fract,offset):
+           new_xyz_fract.append(max(0,min(1,x+o)))
+         xyz_fract=matrix.col(new_xyz_fract)
       points_list.append(xyz_fract)
       if points_list.size()>=n: break
   sites_orth=crystal_symmetry.unit_cell().orthogonalize(points_list)
@@ -3098,7 +3706,12 @@ def get_ncs_list(ncs_type,
    helical_trans_z_angstrom=None,
    op_max=None,
    two_fold_along_x=None,
+   ncs_obj_to_check=None,
     out=sys.stdout):
+
+  if ncs_obj_to_check:
+    return [ncs_obj_to_check],["SUPPLIED NCS"]
+
   ncs_list=[]
   ncs_type_list=[]
   all=False
@@ -3135,13 +3748,19 @@ def get_ncs_list(ncs_type,
       ncs_type_list.append('I (b)')
       ncs_list.append(get_ncs_from_text(text=icosahedral_text_2,))
       ncs_type_list.append('I (d)')
+      ncs_list.append(get_ncs_from_text(text=icosahedral_text_3,
+         text_is_ncs_spec=True))
+      ncs_type_list.append('I (f)')
     if two_fold_along_x is None or two_fold_along_x==True:
       ncs_list.append(get_ncs_from_text(text=icosahedral_text,
           rotate_about_z=90))
       ncs_type_list.append('I (a)')
       ncs_list.append(get_ncs_from_text(text=icosahedral_text_2,
           rotate_about_z=90))
-      ncs_type_list.append('I (d)')
+      ncs_type_list.append('I (c)')
+      ncs_list.append(get_ncs_from_text(text=icosahedral_text_3,
+          rotate_about_z=90,text_is_ncs_spec=True))
+      ncs_type_list.append('I (e)')
   if sym_type=='C' or all:
     for i in xrange(i_start,i_end+1):
       ncs_list.append(get_c_symmetry(n=i))
@@ -3369,12 +3988,12 @@ def estimate_expand_size(
 
 def get_max_z_range_for_helical_symmetry(params,out=sys.stdout):
   if not params.input_files.ncs_file: return
-  ncs_obj,dummy_tracking_data=get_ncs(params,None,out=out)
+  ncs_obj,dummy_tracking_data=get_ncs(params=params,out=out)
   if not ncs_obj.is_helical_along_z(): return
   if params.map_modification.restrict_z_distance_for_helical_symmetry:  #take it
-     return params.map_modification.restrict_z_distance_for_helical_symmetry 
+     return params.map_modification.restrict_z_distance_for_helical_symmetry
 
-  if not params.map_modification.restrict_z_turns_for_helical_symmetry: return 
+  if not params.map_modification.restrict_z_turns_for_helical_symmetry: return
 
   print >>out,"Identifying maximum z-range for helical symmetry"
   print >>out,"Maximum of %7.1f turns up and down in Z allowed..." %(
@@ -3386,14 +4005,268 @@ def get_max_z_range_for_helical_symmetry(params,out=sys.stdout):
   theta=abs(180.*math.atan2(sint,cost)/3.14159)
   trans=abs(t)
   pitch=trans*360./max(0.1,theta)
-  max_z=params.map_modification.restrict_z_turns_for_helical_symmetry*pitch 
+  max_z=params.map_modification.restrict_z_turns_for_helical_symmetry*pitch
   print >>out,"Z-values restricted to +/- %7.1f A" %(max_z)
   print >>out,"\nRunning map-box once to get position of molecule, again to"+\
-      "apply\n Z restriction\n"
+      " apply\n Z restriction\n"
   return max_z
 
+def dist(x,y):
+  dd=0.
+  for a,b in zip(x,y):
+    dd+=(a-b)**2
+  return dd**0.5
 
-def get_bounds_for_helical_symmetry(params,args=None,
+def get_ncs_closest_sites(
+    closest_sites=None,
+    sites_cart=None,
+    used_ncs_id_list=None,
+    box_ncs_object=None,
+    box_crystal_symmetry=None,
+    out=sys.stdout):
+
+  # try to find NCS ops mapping sites_cart close to closest_sites
+
+  best_id=None
+  best_rms=None
+  best_sites=closest_sites.deep_copy()
+  for ncs_id in xrange(box_ncs_object.max_operators()):
+    if ncs_id in used_ncs_id_list: continue
+
+    test_sites=closest_sites.deep_copy()
+    ncs_sites_cart=get_ncs_sites_cart(sites_cart=sites_cart,
+       ncs_obj=box_ncs_object,unit_cell=box_crystal_symmetry.unit_cell(),
+       ncs_id=ncs_id,
+       ncs_in_cell_only=False)
+    test_sites.extend(ncs_sites_cart)
+    rms=radius_of_gyration_of_vector(test_sites)
+    if best_rms is None or rms < best_rms:
+      best_rms=rms
+      best_ncs_id=ncs_id
+      best_sites=test_sites.deep_copy()
+  used_ncs_id_list.append(best_ncs_id)
+  return best_sites,used_ncs_id_list
+
+def get_closest_sites(
+    high_points=None,
+    sites_cart=None,
+    box_ncs_object=None,
+    box_crystal_symmetry=None,
+    out=sys.stdout):
+
+  if not box_ncs_object.is_point_group_symmetry() and not \
+      box_ncs_object.is_helical_along_z():
+    # extract point_group symmetry if present and box_ncs_object doesn't have it
+    print >>out,\
+      "Trying to extract point-group symmetry from box_ncs_object "+\
+       "with %d ops" %( box_ncs_object.max_operators())
+
+    ncs_object=box_ncs_object.deep_copy(extract_point_group_symmetry=True)
+    if ncs_object:
+      print >>out,\
+          "New number of operators satisfying point-group symmetry: %d" %(
+        ncs_object.max_operators())
+      box_ncs_object=ncs_object
+
+    else:
+      print >>out,"No point-group symmetry found"
+
+
+  ncs_copies=box_ncs_object.max_operators()
+  closest_sites=high_points
+  from scitbx.matrix import col
+  for id in xrange(sites_cart.size()):
+    local_sites_cart=sites_cart[id:id+1]
+    local_sites_cart.extend(get_ncs_sites_cart(sites_cart=local_sites_cart,
+       ncs_obj=box_ncs_object,unit_cell=box_crystal_symmetry.unit_cell(),
+       ncs_in_cell_only=True))
+    if local_sites_cart.size() <ncs_copies: continue  # some were out of range
+
+    xx=col((0.,0.,0.,))
+    for site in closest_sites:
+      xx+=col(site)
+    xx=xx/max(1,closest_sites.size())
+    target=flex.vec3_double()
+    target.append(xx)
+
+    dd,id1,id2=target.min_distance_between_any_pair_with_id(
+       local_sites_cart)
+    best_points=local_sites_cart[id2:id2+1]
+    closest_sites.extend(best_points)
+  return closest_sites[1:]
+
+def get_range(sites=None,unit_cell=None,map_data=None,
+   boundary_tolerance=None,out=sys.stdout):
+  x_values=flex.double()
+  y_values=flex.double()
+  z_values=flex.double()
+  for site_cart in sites:
+    (x,y,z)=tuple(site_cart)
+    x_values.append(x)
+    y_values.append(y)
+    z_values.append(z)
+  x_min_max_mean=x_values.min_max_mean()
+  x_min=x_min_max_mean.min
+  x_max=x_min_max_mean.max
+  y_min_max_mean=y_values.min_max_mean()
+  y_min=y_min_max_mean.min
+  y_max=y_min_max_mean.max
+  z_min_max_mean=z_values.min_max_mean()
+  z_min=z_min_max_mean.min
+  z_max=z_min_max_mean.max
+  print >>out,"\nRange for box:"
+  print >>out,"            X        Y        Z"
+  print >>out," LOW:  %7.1f    %7.1f     %7.1f " %(tuple([x_min,y_min,z_min]))
+  print >>out," HIGH: %7.1f    %7.1f     %7.1f \n" %(tuple([x_max,y_max,z_max]))
+
+  # move to 0, 1 if near ends
+  if x_min<=boundary_tolerance: x_min=0.
+  if y_min<=boundary_tolerance: y_min=0.
+  if z_min<=boundary_tolerance: z_min=0.
+  a,b,c,al,bet,gam=unit_cell.parameters()
+  if x_min>=a-boundary_tolerance: x_min=a
+  if y_min>=b-boundary_tolerance: y_min=b
+  if z_min>=c-boundary_tolerance: z_min=c
+  print >>out,"\nAdjusted range for box:"
+  print >>out,"            X        Y        Z"
+  print >>out," LOW:  %7.1f    %7.1f     %7.1f " %(tuple([x_min,y_min,z_min]))
+  print >>out," HIGH: %7.1f    %7.1f     %7.1f \n" %(tuple([x_max,y_max,z_max]))
+
+  nx,ny,nz=map_data.all()
+  # convert to grid units
+  i_min=max(0,min(nx,int(0.5+nx*x_min/a)))
+  j_min=max(0,min(ny,int(0.5+ny*y_min/b)))
+  k_min=max(0,min(nz,int(0.5+nz*z_min/c)))
+  i_max=max(0,min(nx,int(0.5+nx*x_max/a)))
+  j_max=max(0,min(ny,int(0.5+ny*y_max/b)))
+  k_max=max(0,min(nz,int(0.5+nz*z_max/c)))
+  lower_bounds=[i_min,j_min,k_min]
+  upper_bounds=[i_max,j_max,k_max]
+
+  print >>out,"\nGrid bounds for box:"
+  print >>out,"            X        Y        Z"
+  print >>out," LOW:  %7d    %7d     %7d " %(tuple([i_min,j_min,k_min]))
+  print >>out," HIGH: %7d    %7d     %7d \n" %(tuple([i_max,j_max,k_max]))
+
+  return lower_bounds,upper_bounds
+
+def get_bounds_for_au_box(params,
+     box=None,out=sys.stdout):
+
+  # Try to get bounds for a box that include one au
+
+  if not box.ncs_object or box.ncs_object.max_operators()<2:
+    return None,None,None
+
+  box_ncs_object=box.ncs_object
+  box_map_data=box.map_box
+  box_crystal_symmetry=box.box_crystal_symmetry
+  random_points=10*params.reconstruction_symmetry.random_points
+
+  sites_cart=get_points_in_map(box_map_data,n=random_points,
+    minimum_fraction_of_max=params.segmentation.density_select_threshold,
+    random_xyz=params.crystal_info.resolution*2.,
+    crystal_symmetry=box_crystal_symmetry)
+  assert sites_cart.size() >0
+
+  # apply symmetry to sites_orth and see where the molecule is
+  ncs_sites_cart=get_ncs_sites_cart(sites_cart=sites_cart,
+       ncs_obj=box_ncs_object,unit_cell=box_crystal_symmetry.unit_cell(),
+       ncs_in_cell_only=True)
+
+  # generate this in a lower-memory way XXX
+  low_res_map_data=get_low_res_map_data(sites_cart=ncs_sites_cart,
+    d_min=params.crystal_info.resolution*7.,
+    crystal_symmetry=box_crystal_symmetry,
+    out=out)
+
+  high_points=get_high_points_from_map(  # actually returns just one.
+        map_data=low_res_map_data,
+        unit_cell=box_crystal_symmetry.unit_cell(),out=out)
+  from scitbx.matrix import col
+  high_points=high_points[0:1]
+  cutout_center=col(high_points[0])
+  print "Center of box will be near (%7.1f,%7.1f,%7.1f)" %(
+     tuple(cutout_center))
+
+  # now figure out box that contains at least one copy of each ncs-related
+  #  point.
+
+  # Find closest ncs-related points for each unique random point to this
+  # center. Starting box is the box that contains all of these.
+
+  closest_sites=get_closest_sites(
+    high_points=high_points,
+    sites_cart=sites_cart,
+    box_ncs_object=box_ncs_object,
+    box_crystal_symmetry=box_crystal_symmetry,
+    out=out)
+  if not closest_sites or closest_sites.size()<1:
+    print >>out,"\nNo sites representing au of map found...skipping au box\n"
+    return None,None,None
+
+  print >>out,"\nTotal of %d sites representing 1 au found" %(
+      closest_sites.size())
+
+  # write out closest_sites to match original position
+  coordinate_offset=-1*matrix.col(box.shift_cart)
+  write_atoms(file_name='one_au.pdb',
+      crystal_symmetry=box_crystal_symmetry,sites=closest_sites+coordinate_offset)
+
+  unique_closest_sites=closest_sites.deep_copy()
+  # Now if desired, find NCS-related groups of sites
+  if params.segmentation.n_au_box >1:
+    print >>out,"\nFinding up to %d related au" %(params.segmentation.n_au_box)
+    print >>out,"Starting RMSD of sites: %7.1f A " %(
+       radius_of_gyration_of_vector(closest_sites))
+
+    sites_orig=closest_sites.deep_copy()
+    used_ncs_id_list=[box_ncs_object.ncs_groups()[0].identity_op_id()]
+    for i in xrange(params.segmentation.n_au_box-1):
+      closest_sites,used_ncs_id_list=get_ncs_closest_sites(
+        used_ncs_id_list=used_ncs_id_list,
+        closest_sites=closest_sites,
+        sites_cart=sites_orig,
+        box_ncs_object=box_ncs_object,
+        box_crystal_symmetry=box_crystal_symmetry,
+        out=out)
+    print >>out,"\nNew total of %d sites representing %d au found" %(
+      closest_sites.size(),params.segmentation.n_au_box)
+    print >>out,"New rmsd: %7.1f A " %(
+       radius_of_gyration_of_vector(closest_sites))
+    write_atoms(file_name='more_au.pdb',crystal_symmetry=box_crystal_symmetry,sites=closest_sites+coordinate_offset)
+    write_ccp4_map(box_crystal_symmetry,"more_au.ccp4",box_map_data)
+
+  lower_bounds,upper_bounds=get_range(
+     sites=closest_sites,map_data=box_map_data,
+     boundary_tolerance=params.crystal_info.resolution,
+     unit_cell=box_crystal_symmetry.unit_cell(),
+     out=out)
+  return lower_bounds,upper_bounds,unique_closest_sites+coordinate_offset
+
+def get_low_res_map_data(sites_cart=None,
+    crystal_symmetry=None,
+    d_min=None,
+    out=sys.stdout):
+
+    from cctbx import xray
+    xrs,scatterers=set_up_xrs(crystal_symmetry=crystal_symmetry)
+    unit_cell=crystal_symmetry.unit_cell()
+    sites_fract=unit_cell.fractionalize(sites_cart)
+    for xyz_fract in sites_fract:
+      scatterers.append( xray.scatterer(scattering_type="H", label="H",
+        site=xyz_fract, u=0, occupancy=1.0))
+    xrs = xray.structure(xrs, scatterers=scatterers)
+    # generate f_array to d_min with xrs
+    f_array= xrs.structure_factors(d_min=d_min, anomalous_flag=False).f_calc()
+    weight_f_array=f_array.structure_factors_from_scatterers(
+      algorithm = 'direct',
+      xray_structure = xrs).f_calc()
+
+    return get_map_from_map_coeffs(map_coeffs=weight_f_array,
+      crystal_symmetry=crystal_symmetry)
+
+def get_bounds_for_helical_symmetry(params,
      box=None,crystal_symmetry=None):
   original_cell=box.map_data.all()
   new_cell=box.map_box.all()
@@ -3411,11 +4284,34 @@ def get_bounds_for_helical_symmetry(params,args=None,
   lower_bounds[2]=new_z_first
   upper_bounds[2]=new_z_last
 
-  new_args=[]
-  for arg in args:
-    if not arg.startswith('density_select'):
-      new_args.append(arg)
-  return new_args,lower_bounds,upper_bounds
+  return lower_bounds,upper_bounds
+
+def check_memory(map_data,ratio_needed,maximum_fraction_to_use=0.90,
+    maximum_map_size=1,
+    out=sys.stdout):
+  map_size=map_data.size()/(1024*1024*1024)
+  if maximum_map_size and map_size>maximum_map_size:
+     raise Sorry("Maximum map size for this tool is %s GB" %(maximum_map_size))
+  needed_memory=ratio_needed*map_size
+  from libtbx.utils import guess_total_memory # returns total memory
+
+  bytes_total_memory=guess_total_memory()
+  if bytes_total_memory:
+    total_memory=bytes_total_memory/(1024*1024*1024)
+  else:
+    total_memory=None
+  print >>out,"\nMap size is " +\
+      "%.2f GB.  This will require about %.1f GB of memory" %(
+      map_size,needed_memory) +"\nfor this stage of analysis\n"
+  if total_memory:
+    print >>out,"Total memory on this computer is about %.1f GB." %(
+      total_memory)
+    if (needed_memory>= 0.5* total_memory):
+      print >>out,"\n ** WARNING:  It is possible that this computer may not"+\
+       " have **\n *** sufficient memory to complete this job. ***\n"
+    if (needed_memory >= maximum_fraction_to_use*total_memory):
+      raise Sorry("This computer does not have sufficient "+
+        "memory (%.0f GB needed) \nto run this job" %(needed_memory))
 
 def get_params(args,map_data=None,crystal_symmetry=None,out=sys.stdout):
 
@@ -3429,6 +4325,13 @@ def get_params(args,map_data=None,crystal_symmetry=None,out=sys.stdout):
   from cctbx.maptbx.auto_sharpen import set_sharpen_params
   params=set_sharpen_params(params,out)
 
+  if (not params.map_modification.auto_sharpen or
+       params.map_modification.b_iso is not None) and (
+    not params.crystal_info.molecular_mass and
+    not params.crystal_info.solvent_content and
+    not params.input_files.seq_file):
+     raise Sorry("Please use auto_sharpen or supply molecular mass or "+
+        "solvent_content or a sequence file")
   if not params.crystal_info.resolution and (
      params.map_modification.b_iso is not None or \
       params.map_modification.auto_sharpen
@@ -3473,15 +4376,15 @@ def get_params(args,map_data=None,crystal_symmetry=None,out=sys.stdout):
     print >>out,"Loading tracking data from %s" %(
       params.input_files.info_file)
     tracking_data=easy_pickle.load(params.input_files.info_file)
-    return params,map_data,half_map_data_list,pdb_hierarchy,tracking_data
+    return params,map_data,half_map_data_list,pdb_hierarchy,tracking_data,None
   else:
     tracking_data=info_object()
     tracking_data.set_params(params)
 
   # PDB file
-  print >>out,"\nInput PDB file to be shifted only: %s\n" %(
-     params.input_files.pdb_file)
   if params.input_files.pdb_file:
+    print >>out,"\nInput PDB file to be shifted only: %s\n" %(
+       params.input_files.pdb_file)
     pdb_inp = iotbx.pdb.input(file_name=params.input_files.pdb_file)
     pdb_hierarchy = pdb_inp.construct_hierarchy()
     pdb_atoms = pdb_hierarchy.atoms()
@@ -3515,6 +4418,13 @@ def get_params(args,map_data=None,crystal_symmetry=None,out=sys.stdout):
        file_name=params.input_files.half_map_file[1]).data.as_double())
 
 
+  # check on size right away
+  if params.control.memory_check:
+    # map_box and mask generation use about 50GB of memory for
+    #    map with 1 billion elements
+    check_memory(map_data=map_data,maximum_map_size=None,
+      ratio_needed=50,out=out)
+
   if params.map_modification.magnification and \
        params.map_modification.magnification!=1.0:
     print >>out,"\nAdjusting magnification by %7.3f\n" %(
@@ -3523,7 +4433,7 @@ def get_params(args,map_data=None,crystal_symmetry=None,out=sys.stdout):
     if params.input_files.ncs_file:
       # Magnify ncs
       print >>out,"NCS before applying magnification..."
-      ncs_obj,dummy_tracking_data=get_ncs(params,None,out=out)
+      ncs_obj,dummy_tracking_data=get_ncs(params=params,out=out)
       ncs_obj.format_all_for_group_specification(out=out)
       ncs_obj=ncs_obj.adjust_magnification(
         magnification=params.map_modification.magnification)
@@ -3582,20 +4492,21 @@ def get_params(args,map_data=None,crystal_symmetry=None,out=sys.stdout):
 
   # Save center of map
   map_ncs_center=get_center_of_map(map_data,crystal_symmetry)
- 
+
   # Check for helical ncs...if present we may try to cut map at +/- 1 turn
   params.map_modification.restrict_z_distance_for_helical_symmetry=\
      get_max_z_range_for_helical_symmetry(params,out=out)
 
   # either use map_box with density_select=True or just shift the map
   if  params.segmentation.density_select:
+
     print >>out,"\nTrimming map to density..."
     # turn off density_select_in_auto_sharpen in case it was on...
     if params.map_modification.density_select_in_auto_sharpen:
       params.map_modification.density_select_in_auto_sharpen=False
       print >>out,"Turning off density_select_in_auto_sharpen as "+\
          "it will be done here"
-    args=["density_select=True","output_format=ccp4"]
+    args= ["output_format=ccp4"]
     if params.segmentation.density_select_threshold is not None:
       print >>out,"Threshold for density selection will be: %6.2f \n"%(
        params.segmentation.density_select_threshold)
@@ -3613,20 +4524,104 @@ def get_params(args,map_data=None,crystal_symmetry=None,out=sys.stdout):
        "density_select")
     args.append("output_file_name_prefix=%s" %(file_name_prefix))
     from mmtbx.command_line.map_box import run as run_map_box
-    box=run_map_box(args,crystal_symmetry=crystal_symmetry,log=out)
 
-    # Run again for helical symmetry
-    if params.map_modification.restrict_z_distance_for_helical_symmetry:
-      args,lower_bounds,upper_bounds=get_bounds_for_helical_symmetry(params,
-         args=args,crystal_symmetry=crystal_symmetry,box=box)
+    if params.segmentation.lower_bounds and params.segmentation.upper_bounds:
+      bounds_supplied=True
+      print >>out,"\nRunning map_box with supplied bounds"
+      box=run_map_box(args,lower_bounds=params.segmentation.lower_bounds,
+          upper_bounds=params.segmentation.upper_bounds, log=out)
+    else:
+      bounds_supplied=False
+      box=run_map_box(["density_select=True"]+args,log=out)
+      #box=run_map_box(["keep_map_size=True"]+args,log=out)
+
+    # Run again to select au box
+    shifted_unique_closest_sites=None
+    selected_au_box=None
+    if params.segmentation.select_au_box is None and  box.ncs_object and \
+      box.ncs_object.max_operators() >= params.segmentation.n_ops_to_use_au_box:
+      params.segmentation.select_au_box=True
+      print >>out,"Setting select_au_box to True as there are %d operators" %(
+        box.ncs_object.max_operators())
+    if params.segmentation.select_au_box and not bounds_supplied:
+      lower_bounds,upper_bounds,unique_closest_sites=get_bounds_for_au_box(
+         params, box=box,out=out) #unique_closest_sites relative to original map
+      if lower_bounds and upper_bounds:
+        bounds_supplied=True
+        selected_au_box=True
+        score,ncs_cc=score_ncs_in_map(map_data=box.map_box,
+          allow_score_with_pg=False,
+          sites_orth=unique_closest_sites+box.shift_cart,
+          ncs_object=box.ncs_object,ncs_in_cell_only=True,
+          crystal_symmetry=box.box_crystal_symmetry,out=null_out())
+        print >>out,\
+          "NCS CC before rerunning box: %7.2f   SCORE: %7.1f OPS: %d " %(
+         ncs_cc,score,box.ncs_object.max_operators())
+
+        print >>out,"\nRunning map-box again with boxed range ..."
+        del box
+        box=run_map_box(args,lower_bounds=lower_bounds,
+          upper_bounds=upper_bounds, log=out)
+        box.map_box=box.map_box.as_double()  # Do we need double?
+        shifted_unique_closest_sites=unique_closest_sites+box.shift_cart
+
+    # Or run again for helical symmetry
+    elif params.map_modification.restrict_z_distance_for_helical_symmetry and \
+       not bounds_supplied:
+      bounds_supplied=True
+      lower_bounds,upper_bounds=get_bounds_for_helical_symmetry(params,
+         crystal_symmetry=crystal_symmetry,box=box)
       print >>out,"\nRunning map-box again with restricted Z range ..."
       box=run_map_box(args,lower_bounds=lower_bounds,upper_bounds=upper_bounds,
-        crystal_symmetry=crystal_symmetry,log=out)
+        log=out)
+
+    #-----------------------------
+    if bounds_supplied and box.ncs_object:
+      print >>out,"Selecting remaining NCS operators"
+      box.ncs_object=select_remaining_ncs_ops(
+        map_data=box.map_box,
+        crystal_symmetry=box.box_crystal_symmetry,
+        closest_sites=shifted_unique_closest_sites,
+        random_points=params.reconstruction_symmetry.random_points,
+        ncs_object=box.ncs_object,
+        out=out)
+
+      score,ncs_cc=score_ncs_in_map(map_data=box.map_box,
+          allow_score_with_pg=False,
+          ncs_object=box.ncs_object,ncs_in_cell_only=True,
+          sites_orth=shifted_unique_closest_sites,
+          crystal_symmetry=box.box_crystal_symmetry,out=null_out())
+
+      if score is not None:
+        print >>out,"NCS CC after selections: %7.2f   SCORE: %7.1f  OPS: %d" %(
+         ncs_cc,score,box.ncs_object.max_operators())
+    #-----------------------------
+
+    if box.unit_cell_parameters_from_ccp4_map and \
+       box.unit_cell_parameters_deduced_from_map_grid and \
+       box.unit_cell_parameters_from_ccp4_map !=  \
+          box.unit_cell_parameters_deduced_from_map_grid:
+      if selected_au_box:
+        raise Sorry("Unable to select an au box because unit cell "+
+         "parameters in map file \nwere not consistent." +
+        " (See 'Mismatch of unit cell parameters' above)\n")
+
+      print >>out,"Resetting original unit cell parameters based on "+\
+        "analysis of cell parameters and \nmap grid in map_box..."
+      print >>out,\
+        "Original unit cell parameters from CCP4 map \ngrid (used) are: " +\
+          "%.1f, %.1f, %.1f, %.1f, %.1f, %.1f)\n" %tuple(
+          box.unit_cell_parameters_deduced_from_map_grid)
+      new_original_crystal_symmetry=crystal.symmetry(
+         unit_cell=box.unit_cell_parameters_deduced_from_map_grid,
+         space_group='p1')
+      tracking_data.set_original_crystal_symmetry(
+         crystal_symmetry=new_original_crystal_symmetry)
 
     origin_shift=box.shift_cart
     # Note: moving cell with (0,0,0) in middle to (0,0,0) at corner means
     #   total_shift_cart and origin_shift both positive
-    map_data=box.map_box.as_double()
+    map_data=box.map_box
     map_data=scale_map(map_data,out=out)
     crystal_symmetry=box.box_crystal_symmetry
     print >>out,"New unit cell: %7.2f %7.2f %7.2f %7.2f %7.2f %7.2f " %(
@@ -3654,7 +4649,7 @@ def get_params(args,map_data=None,crystal_symmetry=None,out=sys.stdout):
 
     if params.map_modification.soft_mask:
       mask_data,map_data,half_map_data_list,\
-      dummy_solvent_fraction,smoothed_mask_data,\
+      soft_mask_solvent_fraction,smoothed_mask_data,\
       original_box_map_data=\
        get_and_apply_soft_mask_to_maps(
         resolution=params.crystal_info.resolution,
@@ -3663,7 +4658,14 @@ def get_params(args,map_data=None,crystal_symmetry=None,out=sys.stdout):
         map_data=map_data,crystal_symmetry=crystal_symmetry,
         half_map_data_list=half_map_data_list,
         out=out)
-
+      print >>out,\
+        "\nSolvent fraction from soft mask procedure: %7.2f (not used)\n" %(
+        soft_mask_solvent_fraction)
+    shifted_ncs_object=box.ncs_object
+    if not shifted_ncs_object or shifted_ncs_object.max_operators()<2:
+      from mmtbx.ncs.ncs import ncs
+      shifted_ncs_object=ncs()
+      shifted_ncs_object.set_unit_ncs()
 
   else:  # shift if necessary...
     shift_needed = not \
@@ -3695,15 +4697,30 @@ def get_params(args,map_data=None,crystal_symmetry=None,out=sys.stdout):
       half_map_data_list=new_half_map_data_list
     else:
       origin_shift=(0.,0.,0.)
+    # Get NCS object if any
+    if params.input_files.ncs_file:
+      ncs_obj,dummy_obj=get_ncs(file_name=params.input_files.ncs_file)
+      shifted_ncs_object=ncs_obj.coordinate_offset(
+        coordinate_offset=matrix.col(origin_shift)) # shift to match shifted map
+    else:
+      from mmtbx.ncs.ncs import ncs
+      shifted_ncs_object=ncs()
+      shifted_ncs_object.set_unit_ncs()
+
 
   # Set origin shift now
   tracking_data.set_origin_shift(origin_shift)
 
   map_ncs_center=matrix.col(map_ncs_center)+matrix.col(origin_shift) # New ctr
 
-  # Get NCS operators if needed and user did not supply them
+
+  # Get or check NCS operators
+  ncs_obj_to_check=None
   if params.reconstruction_symmetry.ncs_type and (not params.input_files.ncs_file):
     center_try_list=[True,False]
+  elif params.input_files.ncs_file and params.control.check_ncs:
+    center_try_list=[True]
+    ncs_obj_to_check=shifted_ncs_object
   elif params.reconstruction_symmetry.optimize_center:
     center_try_list=[None]
   else:
@@ -3716,7 +4733,7 @@ def get_params(args,map_data=None,crystal_symmetry=None,out=sys.stdout):
     looking_for_ncs=False
 
   for use_center_of_map in center_try_list: # only if ncs_file missing
-    new_ncs_obj=get_ncs_from_map(map_data=map_data,
+    new_ncs_obj,ncs_cc,ncs_score=get_ncs_from_map(map_data=map_data,
       map_ncs_center=map_ncs_center,
       ncs_type=params.reconstruction_symmetry.ncs_type,
       ncs_center=params.reconstruction_symmetry.ncs_center,
@@ -3729,6 +4746,9 @@ def get_params(args,map_data=None,crystal_symmetry=None,out=sys.stdout):
       two_fold_along_x=params.reconstruction_symmetry.two_fold_along_x,
       crystal_symmetry=crystal_symmetry,
       use_center_of_map_as_center=use_center_of_map,
+      identify_ncs_id=params.reconstruction_symmetry.identify_ncs_id,
+      min_ncs_cc=params.reconstruction_symmetry.min_ncs_cc,
+      ncs_obj_to_check=ncs_obj_to_check,
       out=out
       )
     if new_ncs_obj:
@@ -3741,9 +4761,13 @@ def get_params(args,map_data=None,crystal_symmetry=None,out=sys.stdout):
       new_ncs_obj.format_all_for_group_specification(out=f)
       f.close()
       print >>out,"Wrote NCS operators (for original map) to %s" %(file_name)
-      params.input_files.ncs_file=file_name
+      if not params.control.check_ncs:
+        params.input_files.ncs_file=file_name # set it unless we're
       found_ncs=True
       break # found it, no need to continue
+  if params.control.check_ncs:
+    print >>out,"Done checking NCS"
+    return params,map_data,half_map_data_list,pdb_hierarchy,tracking_data,None
 
   if looking_for_ncs and (not found_ncs) and \
          params.reconstruction_symmetry.ncs_type != 'ANY':
@@ -3758,8 +4782,8 @@ def get_params(args,map_data=None,crystal_symmetry=None,out=sys.stdout):
        map_data=map_data,
        expand_target=params.segmentation.expand_target,
        out=out)
-
-  return params,map_data,half_map_data_list,pdb_hierarchy,tracking_data
+  return params,map_data,half_map_data_list,pdb_hierarchy,\
+     tracking_data,shifted_ncs_object
 
 def get_and_apply_soft_mask_to_maps(
     resolution=None,  #params.crystal_info.resolution
@@ -3813,9 +4837,11 @@ def get_and_apply_soft_mask_to_maps(
   return mask_data,map_data,half_map_data_list,\
     solvent_fraction,smoothed_mask_data,original_map_data
 
-def get_ncs(params,tracking_data=None,ncs_object=None,out=sys.stdout):
-  file_name=params.input_files.ncs_file
-  if file_name: print >>out,"Reading ncs from %s" %(file_name)
+def get_ncs(params=None,tracking_data=None,file_name=None,
+     ncs_object=None,out=sys.stdout):
+  if not file_name:
+    file_name=params.input_files.ncs_file
+  if (not ncs_object) and file_name: print >>out,"Reading ncs from %s" %(file_name)
   is_helical_symmetry=None
   if not ncs_object and not file_name: # No ncs supplied...use just 1 ncs copy..
     from mmtbx.ncs.ncs import ncs
@@ -3834,12 +4860,14 @@ def get_ncs(params,tracking_data=None,ncs_object=None,out=sys.stdout):
       except Exception,e: # try as regular ncs object
         ncs_object.read_ncs(file_name=file_name,log=out)
       #ncs_object.display_all(log=out)
+    ncs_object.select_first_ncs_group()
     if ncs_object.max_operators()==0:
+      from mmtbx.ncs.ncs import ncs
       ncs_object=ncs()
       ncs_object.set_unit_ncs()
     print >>out,"\nTotal of %d NCS operators read\n" %(
       ncs_object.max_operators())
-    if not tracking_data:
+    if not tracking_data or not params:
       return ncs_object,None
     if ncs_object.is_helical_along_z(
        abs_tol_t=tracking_data.params.reconstruction_symmetry.abs_tol_t,
@@ -3863,7 +4891,7 @@ def get_ncs(params,tracking_data=None,ncs_object=None,out=sys.stdout):
   if not ncs_object or ncs_object.max_operators()<1:
     raise Sorry("Need ncs information from an ncs_info file")
   if tracking_data:
-    tracking_data.set_input_ncs_info(file_name=file_name,
+    tracking_data.set_input_ncs_info(file_name=file_name,  # XXX may be updated ops
       number_of_operators=ncs_object.max_operators())
 
   if tracking_data and is_helical_symmetry: # update shifted_ncs_info
@@ -3892,7 +4920,6 @@ def get_ncs(params,tracking_data=None,ncs_object=None,out=sys.stdout):
       tracking_data.update_ncs_info(
         number_of_operators=ncs_object.max_operators(),is_helical_symmetry=True,
         shifted=shifted)
-
   return ncs_object,tracking_data
 
 def score_threshold(b_vs_region=None,threshold=None,
@@ -4303,31 +5330,42 @@ def create_rna_dna(cns_dna_rna_residue_names):
     dd[cns_dna_rna_residue_names[key]]=key
   return dd
 
-def get_solvent_fraction(params,
-     ncs_object=None,ncs_copies=None,
-     crystal_symmetry=None,tracking_data=None,out=sys.stdout):
-  if tracking_data and not crystal_symmetry:
-    crystal_symmetry=tracking_data.crystal_symmetry
-  map_volume=crystal_symmetry.unit_cell().volume()
-  if tracking_data and not ncs_copies:
-    ncs_copies=tracking_data.input_ncs_info.original_number_of_operators
-  if not ncs_copies: ncs_copies=1
-  if not params.input_files.seq_file:
-    raise Sorry("Please specify a sequence file with seq_file=myseq.seq")
-  elif not os.path.isfile(params.input_files.seq_file):
+def get_solvent_content_from_seq_file(params,
+    seq_file=None,
+    ncs_copies=None,
+    map_volume=None,
+    out=sys.stdout):
+  if not os.path.isfile(seq_file):
     raise Sorry(
-     "The sequence file '%s' is missing." %(params.input_files.seq_file))
-  seq_as_string=open(params.input_files.seq_file).read()
-  seq_as_string=">\n"+seq_as_string  # so it always starts with >
-  seq_as_string=seq_as_string.replace("\n\n","\n>\n") # blank lines are like >
-  spl=seq_as_string.split(">")
+     "The sequence file '%s' is missing." %(seq_file))
+  print >>out,"\nReading sequence from %s " %(seq_file)
+  from iotbx.bioinformatics import get_sequences
+  sequences=get_sequences(seq_file)
+  # get unique part of these sequences
+
+  from mmtbx.validation.chain_comparison import \
+       extract_unique_part_of_sequences as eups
+  print >>out,"Unique part of sequences:"
+  copies_in_unique,base_copies,unique_sequence_dict=eups(sequences)
+  all_unique_sequence=[]
+  for seq in copies_in_unique.keys():
+    print "Copies: %s  base copies: %s  Sequence: %s" %(
+       copies_in_unique[seq],base_copies,seq)
+    all_unique_sequence.append(seq)
+  if base_copies != ncs_copies:
+    print >>out,"NOTE: %s copies of unique portion but ncs_copies=%s" %(
+       base_copies,ncs_copies)
+    if ncs_copies==1:
+      ncs_copies=base_copies
+      print >>out,"Using ncs_copies=%s instead" %(ncs_copies)
+    else:
+      print >>out,"Still using ncs_copies=%s" %(ncs_copies)
+
   volume_of_chains=0.
   n_residues=0
   chain_types_considered=[]
-  for s in spl:
-    if not s: continue
-    ss="".join(s.splitlines()[1:])
-    volume,nres,chain_type=get_volume_of_seq(ss,
+  for seq in all_unique_sequence:
+    volume,nres,chain_type=get_volume_of_seq(seq,
       chain_type=params.crystal_info.chain_type,out=out)
     if volume is None: continue
     volume_of_chains+=volume
@@ -4341,22 +5379,67 @@ def get_solvent_fraction(params,
   n_residues_times_ncs=n_residues*ncs_copies
   solvent_fraction=1.-(volume_of_molecules/map_volume)
   solvent_fraction=max(0.001,min(0.999,solvent_fraction))
+  if solvent_fraction==0.001 or solvent_fraction==0.999:
+    print >>out,"NOTE: solvent fraction of %7.2f very unlikely..." %(
+        solvent_fraction) + "please check ncs_copies and sequence "
+  print >>out,"Solvent content from composition: %7.2f" %(solvent_fraction)
   print >>out, \
     "Cell volume: %.1f  NCS copies: %d   Volume of unique chains: %.1f" %(
      map_volume,ncs_copies,volume_of_chains)
   print >>out,\
     "Total residues: %d  Volume of all chains: %.1f  Solvent fraction: %.3f "%(
        n_residues_times_ncs,volume_of_molecules,solvent_fraction)
+  return solvent_fraction,n_residues,n_residues_times_ncs
+
+def get_solvent_fraction(params,
+     ncs_object=None,ncs_copies=None,
+     crystal_symmetry=None,tracking_data=None,out=sys.stdout):
+  if tracking_data and not crystal_symmetry:
+    #crystal_symmetry=tracking_data.original_crystal_symmetry not used
+    crystal_symmetry=tracking_data.crystal_symmetry
+  map_volume=crystal_symmetry.unit_cell().volume()
+  if tracking_data and not ncs_copies:
+    #ncs_copies=tracking_data.input_ncs_info.original_number_of_operators
+    ncs_copies=tracking_data.input_ncs_info.number_of_operators # 2018-01-29 put back
+  if not ncs_copies: ncs_copies=1
+
+
+
+  if params.input_files.seq_file:
+    solvent_content,n_residues,n_residues_times_ncs=\
+         get_solvent_content_from_seq_file(
+     params,
+     seq_file=params.input_files.seq_file,
+     ncs_copies=ncs_copies,
+     map_volume=map_volume,
+     out=out)
+    if not params.crystal_info.solvent_content:
+      params.crystal_info.solvent_content=solvent_content
+      print >>out,"Solvent fraction from composition: %7.2f "%(
+       params.crystal_info.solvent_content)
+    else:
+      print >>out,"Solvent content from parameters: %7.2f" %(
+        params.crystal_info.solvent_content)
+
+  else:
+    if params.crystal_info.solvent_content:
+      print >>out,"Solvent content from parameters: %7.2f" %(
+        params.crystal_info.solvent_content)
+    else:
+      print >>out,"Getting solvent content automatically."
+
   if tracking_data:
-    tracking_data.set_input_seq_info(file_name=params.input_files.seq_file,
-    n_residues=n_residues)
-    tracking_data.set_solvent_fraction(solvent_fraction)
-    tracking_data.set_n_residues(
-      n_residues=n_residues_times_ncs)
+    if params.input_files.seq_file:
+      tracking_data.set_input_seq_info(file_name=params.input_files.seq_file,
+        n_residues=n_residues)
+      tracking_data.set_n_residues(
+        n_residues=n_residues_times_ncs)
+    if params.crystal_info.solvent_content:
+      tracking_data.set_solvent_fraction(params.crystal_info.solvent_content)
 
     return tracking_data
   else:
-    return solvent_fraction
+    return params.crystal_info.solvent_content
 
 def top_key(dd):
   if not dd:
@@ -4574,6 +5657,9 @@ def get_duplicates_and_ncs(
   identity_op=ncs_group.identity_op_id()
   print >>out,"Identity operator is %s" %(identity_op)
 
+  # 2017-12-16 Score poorly if it involves a cell translation unless it
+  #  is a crystal
+
   if len(ncs_group.translations_orth())>1:
     # Skip if no ncs...
     for id in region_scattered_points_dict.keys():
@@ -4587,7 +5673,13 @@ def get_duplicates_and_ncs(
           n+=1
           new_xyz_cart=r * matrix.col(xyz_cart) + t
           new_xyz_frac=unit_cell.fractionalize(new_xyz_cart)
-          value=edited_mask.value_at_closest_grid_point(new_xyz_frac)
+          if tracking_data.params.crystal_info.use_sg_symmetry or \
+            (new_xyz_frac[0]>=0 and new_xyz_frac[0]<=1 and \
+             new_xyz_frac[1]>=0 and new_xyz_frac[1]<=1 and \
+             new_xyz_frac[2]>=0 and new_xyz_frac[2]<=1):
+            value=edited_mask.value_at_closest_grid_point(new_xyz_frac)
+          else:
+            value=0  # value for nothing there 2017-12-16
           if value==id:
             duplicate_dict[id]+=1
             break # only count once
@@ -4677,6 +5769,7 @@ def get_ncs_equivalents(
     n_found=0
     for id1 in key_list:
       #     id matches id1 N=match_dict[id1]
+      #  2017-12-16 Do not include if there is a cell translation
 
       key,n=top_key(equiv_dict_ncs_copy_dict[id][id1]) # ncs_copy, n-overlap
       if n<min_coverage*region_scattered_points_dict[id].size():
@@ -4689,22 +5782,6 @@ def get_ncs_equivalents(
           break
 
   return equiv_dict_ncs_copy
-
-  # Skipping this below
-  print >>out,"\nSets of NCS-related regions"
-  keys=equiv_dict_ncs_copy.keys()
-  keys.sort()
-  used=[]
-  for id in keys:
-    #if id in used: continue
-    others=equiv_dict_ncs_copy[id].keys()
-    used+=others
-    print >>out,"%d: " %(id),
-    for id1 in others:
-      key,n=top_key(equiv_dict_ncs_copy_dict[id][id1])
-      print >>out,"%d:%d" %(id1,n),
-    print >>out
-  print >>out
 
 def get_overlap(l1,l2):
   overlap_list=[]
@@ -5060,6 +6137,9 @@ def get_dist_to_first_dict(ncs_group_obj=None,
           changing=True
   return dist_to_first_dict
 
+def radius_of_gyration_of_vector(xyz):
+  return (xyz-xyz.mean()).rms_length()
+
 def get_radius_of_gyration(ncs_group_obj=None,
     selected_regions=None):
   # return radius of gyration of points in selected regions
@@ -5241,7 +6321,6 @@ def add_neighbors(params,
   identity_op=ncs_group.identity_op_id()
   ncs_ops_used=[identity_op]
 
-  did_not_find_list=[]
   for id in selected_regions:
     related_regions=get_ncs_related_regions(
       ncs_group_obj=ncs_group_obj,
@@ -5252,14 +6331,7 @@ def add_neighbors(params,
       ncs_copy1=equiv_dict_ncs_copy.get(id,{}).get(id1,None)
       ncs_copy2=equiv_dict_ncs_copy.get(id1,{}).get(id,None)
       for a in [ncs_copy1,ncs_copy2]:
-        if a is None:
-          x=[id,id1]
-          x.sort()
-          x="%s_%s" %(tuple(x))
-          if not x in did_not_find_list:
-            did_not_find_list.append(x)
-        else:
-          if not a in ncs_ops_used:
+        if a is not None and not a in ncs_ops_used:
             ncs_ops_used.append(a)
   selected_regions.sort()
   ncs_ops_used.sort()
@@ -6126,12 +7198,14 @@ def iterate_search(params,
     new_params.output_files.au_output_file_stem=None
 
   fraction=params.segmentation.iteration_fraction
-  new_n_residues=int(tracking_data.n_residues*fraction)
+  if tracking_data.n_residues:
+    new_n_residues=int(tracking_data.n_residues*fraction)
   new_solvent_fraction=max(0.001,min(0.999,
       1- (1-tracking_data.solvent_fraction)*fraction))
 
   new_tracking_data=deepcopy(tracking_data)
-  new_tracking_data.set_n_residues(new_n_residues)
+  if new_tracking_data.n_residues:
+    new_tracking_data.set_n_residues(new_n_residues)
   new_tracking_data.set_solvent_fraction(new_solvent_fraction)
   new_tracking_data.set_origin_shift() # sets it to zero
   new_tracking_data.params.segmentation.starting_density_threshold=new_params.segmentation.starting_density_threshold # this is new
@@ -6330,6 +7404,7 @@ def apply_shift_to_pdb_hierarchy(
 
 def apply_origin_shift(origin_shift=None,
     ncs_object=None,
+    shifted_ncs_object=None,
     pdb_hierarchy=None,
     target_hierarchy=None,
     map_data=None,
@@ -6375,8 +7450,9 @@ def apply_origin_shift(origin_shift=None,
        out=out)
 
     from scitbx.math import  matrix
-    ncs_object=ncs_object.coordinate_offset(
-       coordinate_offset=matrix.col(origin_shift))
+    if ncs_object and not shifted_ncs_object:
+      shfted_ncs_object=ncs_object.coordinate_offset(
+         coordinate_offset=matrix.col(origin_shift))
 
 
   if shifted_pdb_file and pdb_hierarchy:
@@ -6392,21 +7468,22 @@ def apply_origin_shift(origin_shift=None,
       n_residues=pdb_hierarchy.overall_counts().n_residues)
 
 
-  if shifted_ncs_file:
-      ncs_object.format_all_for_group_specification(
+  if shifted_ncs_file and shifted_ncs_object:
+      shifted_ncs_object.format_all_for_group_specification(
          file_name=shifted_ncs_file)
       print >>out,"Wrote %s NCS operators for shifted map to %s" %(
-         ncs_object.max_operators(),
+         shifted_ncs_object.max_operators(),
          shifted_ncs_file)
       if tracking_data.input_ncs_info.has_updated_operators():
         print >>out,\
-        "NOTE: these may include additional operators added to fill the cell"
+        "NOTE: these may include additional operators added to fill the cell"+\
+        " or\nhave fewer operators if not all applied."
       tracking_data.set_shifted_ncs_info(file_name=shifted_ncs_file,
-        number_of_operators=ncs_object.max_operators(),
+        number_of_operators=shifted_ncs_object.max_operators(),
         is_helical_symmetry=tracking_data.input_ncs_info.is_helical_symmetry)
       tracking_data.shifted_ncs_info.show_summary(out=out)
 
-  return ncs_object,pdb_hierarchy,target_hierarchy,tracking_data,\
+  return shifted_ncs_object,pdb_hierarchy,target_hierarchy,tracking_data,\
      sharpening_target_pdb_inp
 
 def restore_pdb(params,tracking_data=None,out=sys.stdout):
@@ -6469,7 +7546,7 @@ def remove_points(mask,remove_points=None):
   new_mask=(mask & keep_points)
   return new_mask
 
-def get_ncs_sites_cart(sites_cart=None,
+def get_ncs_sites_cart(sites_cart=None,ncs_id=None,
      ncs_obj=None, unit_cell=None, ncs_in_cell_only=True):
 
   ncs_sites_cart=flex.vec3_double()
@@ -6484,6 +7561,7 @@ def get_ncs_sites_cart(sites_cart=None,
   for xyz_cart in sites_cart:
     for i0 in xrange(len(ncs_group.translations_orth())):
       if i0==identity_op: continue
+      if ncs_id is not None and i0!=ncs_id: continue
       r=ncs_group.rota_matrices_inv()[i0] # inverse maps pos 0 on to pos i
       t=ncs_group.translations_orth_inv()[i0]
       new_xyz_cart=r * matrix.col(xyz_cart) + t
@@ -6620,7 +7698,6 @@ def get_marked_points_cart(mask_data=None,unit_cell=None,
   else:
     boundary_grid_points=0
 
-
   marked_points=maptbx.marked_grid_points(
     map_data=mask_data,
     every_nth_point=every_nth_point).result()
@@ -6632,9 +7709,9 @@ def get_marked_points_cart(mask_data=None,unit_cell=None,
          grid_point[0]<boundary_grid_points or \
          grid_point[0]>nx-boundary_grid_points or \
          grid_point[1]<boundary_grid_points or \
-         grid_point[0]>ny-boundary_grid_points or \
+         grid_point[1]>ny-boundary_grid_points or \
          grid_point[2]<boundary_grid_points or \
-         grid_point[0]>nz-boundary_grid_points:
+         grid_point[2]>nz-boundary_grid_points:  # XXX was typo previously
         boundary_points_skipped+=1
         continue
     sites_frac.append(
@@ -6709,11 +7786,12 @@ def get_overall_mask(
 
   # First mask out the map based on threshold
   mm=sd_map.as_1d().min_max_mean()
-  max_in_map=mm.max
+  max_in_sd_map=mm.max
   mean_in_map=mm.mean
   min_in_map=mm.min
-  print >>out,"Highest value in map is %7.2f. Mean is %7.2f .  Lowest is %7.2f " %(
-    max_in_map,
+  print >>out,\
+       "Highest value in SD map is %7.2f. Mean is %7.2f .  Lowest is %7.2f " %(
+    max_in_sd_map,
     mean_in_map,
     min_in_map)
 
@@ -6731,7 +7809,7 @@ def get_overall_mask(
   print >>out,"Model region of map "+\
     "(density above %7.3f )" %( threshold) +" includes %7.1f%% of map" %(
       100.*overall_mask.count(True)/overall_mask.size())
-  return overall_mask,max_in_map,sd_map
+  return overall_mask,max_in_sd_map,sd_map
 
 def get_skew(data=None):
   mean=data.min_max_mean().mean
@@ -6960,13 +8038,17 @@ def get_iterated_solvent_fraction(map=None,
       "The input map seems to be on a grid incompatible with crystal symmetry"+
          "\n(symmetry equivalents of a grid point must be on "+
           "an integer grid point)")
+    elif str(e).find("maximum size for resolve is")>-1:
+      raise Sorry(str(e)+
+       "\nIt may be possible to go on by supplying solvent content")
+
 
     return None  # was not available
 
 def set_up_si(var_dict=None,crystal_symmetry=None,
       is_crystal=None,
       ncs_copies=None,n_residues=None,
-      solvent_fraction=None,pdb_inp=None,map=None,
+      solvent_fraction=None,molecular_mass=None,pdb_inp=None,map=None,
       auto_sharpen=True,half_map_data_list=None,verbose=None,
       out=sys.stdout):
     si=sharpening_info(n_real=map.all())
@@ -7053,8 +8135,23 @@ def set_up_si(var_dict=None,crystal_symmetry=None,
        else:
          args.append("%s=%s" %(param,x))
     local_params=get_params_from_args(args)
+
+    # Set solvent content from molecular_mass if present
+    if molecular_mass and \
+       not solvent_fraction:
+     map_volume=crystal_symmetry.unit_cell().volume()
+     density_factor=1000*1.23 # just protein density, close enough...
+     mm=molecular_mass
+     if mm > 1000: mm=mm/1000  # was in Da
+     solvent_fraction=max(0.01,min(1.,1 - (
+         mm*density_factor/map_volume)))
+     print >>out,"Solvent content of %7.2f from molecular mass of %7.1f kDa" %(
+     solvent_fraction,mm)
+
+
     if local_params.input_files.seq_file and \
-        not local_params.crystal_info.solvent_content:
+        not local_params.crystal_info.solvent_content and \
+        not solvent_fraction: # 2017-12-19
         solvent_fraction=get_solvent_fraction(local_params,
           crystal_symmetry=crystal_symmetry,
           ncs_copies=ncs_copies,out=out)
@@ -7284,7 +8381,7 @@ def select_box_map_data(si=None,
     lower_bounds=box.gridding_first
     upper_bounds=box.gridding_last
 
-    box_map=box.map_box.as_double()
+    box_map=box.map_box
     box_map=scale_map(box_map,out=out)
     box_crystal_symmetry=box.box_crystal_symmetry
     box_pdb_inp=box.hierarchy.as_pdb_input()
@@ -7669,6 +8766,7 @@ def get_target_boxes(si=None,ncs_obj=None,map=None,
     args=[
         'resolution=%s' %(si.resolution),
         'seq_file=%s' %(si.seq_file),
+        'solvent_content=%s' %(si.solvent_fraction),
         'auto_sharpen=False', # XXX could sharpen overall
         'write_output_maps=True',
         'add_neighbors=False',
@@ -7984,6 +9082,7 @@ def auto_sharpen_map_or_map_coeffs(
         fraction_complete=None,
         n_real=None,
         solvent_content=None,
+        molecular_mass=None,
         region_weight=None,
         sa_percent=None,
         n_bins=None,
@@ -8104,6 +9203,7 @@ def auto_sharpen_map_or_map_coeffs(
         crystal_symmetry=crystal_symmetry,
         is_crystal=is_crystal,
         solvent_fraction=solvent_content,
+        molecular_mass=molecular_mass,
         auto_sharpen=auto_sharpen,
         map=map,
         verbose=verbose,
@@ -8120,7 +9220,10 @@ def auto_sharpen_map_or_map_coeffs(
         resolve_size=si.resolve_size,
         map=map,
         out=out)
-    print >>out,"Estimated solvent fraction: %.2f" %(si.solvent_fraction)
+    if si.solvent_fraction:
+      print >>out,"Estimated solvent content: %.2f" %(si.solvent_fraction)
+    else:
+      raise Sorry("Unable to estimate solvent content...please supply it")
     # Determine if we are running half-map or model_sharpening
     if half_map_data_list and len(half_map_data_list)==2:
       first_half_map_data=half_map_data_list[0]
@@ -9019,6 +10122,31 @@ def update_tracking_data_with_sharpening(map_data=None,tracking_data=None,
           all=map_data.all(),
           b_sharpen=None)
 
+def get_high_points_from_map(
+     map_data=None,
+     boundary_radius=5.,
+     unit_cell=None,
+     out=sys.stdout):
+    max_in_map_data=map_data.as_1d().min_max_mean().max
+    for cutoff in [0.99,0.98,0.95,0.90,0.50]:
+      high_points_mask=(map_data>= cutoff*max_in_map_data)
+      sda=map_data.as_1d().min_max_mean().max
+      for nth_point in [4,2,1]:
+        sites_cart=get_marked_points_cart(mask_data=high_points_mask,
+          unit_cell=unit_cell,every_nth_point=nth_point,
+          boundary_radius=boundary_radius)
+        if sites_cart.size()>0: break
+      if sites_cart.size()>0: break
+    assert sites_cart.size()>0
+    del high_points_mask
+    sites_cart=sites_cart[:1]
+    xyz_frac=unit_cell.fractionalize(sites_cart[0])
+    value=map_data.value_at_closest_grid_point(xyz_frac)
+    print >>out,\
+        "High point in map at (%7.2f %7.2f %7.2f) with value of %7.2f " %(
+        sites_cart[0][0],sites_cart[0][1],sites_cart[0][2],value)
+    return sites_cart
+
 def get_one_au(tracking_data=None,
     sites_cart=None,
     ncs_obj=None,
@@ -9044,7 +10172,7 @@ def get_one_au(tracking_data=None,
     tracking_data.params.segmentation.radius=radius
   print >>out,"\nRadius for AU identification: %7.2f A" %(radius)
 
-  overall_mask,max_in_map,sd_map=get_overall_mask(map_data=map_data,
+  overall_mask,max_in_sd_map,sd_map=get_overall_mask(map_data=map_data,
     mask_threshold=mask_threshold,
     crystal_symmetry=tracking_data.crystal_symmetry,
     resolution=tracking_data.params.crystal_info.resolution,
@@ -9065,20 +10193,10 @@ def get_one_au(tracking_data=None,
     print >>out,"New size of overall mask: ",overall_mask.count(True)
   else:
     if not sites_cart: # pick top of map
-      high_points_mask=(sd_map>= 0.99*max_in_map)
-      for nth_point in [4,2,1]:
-        sites_cart=get_marked_points_cart(mask_data=high_points_mask,
-          unit_cell=unit_cell,every_nth_point=nth_point,
-          boundary_radius=radius)
-        if sites_cart.size()>0: break
-      assert sites_cart.size()>0
-      del high_points_mask
-      sites_cart=sites_cart[:1]
-      xyz_frac=unit_cell.fractionalize(sites_cart[0])
-      value=sd_map.value_at_closest_grid_point(xyz_frac)
-      print >>out,"High point in map at (%7.2f %7.2f %7.2f) with value of %7.2f " %(
-        sites_cart[0][0],sites_cart[0][1],sites_cart[0][1],value)
-
+      sites_cart=get_high_points_from_map(
+        boundary_radius=radius,
+        map_data=sd_map,
+        unit_cell=unit_cell,out=out)
 
     starting_mask=mask_from_sites_and_map( # starting au mask
       map_data=sd_map,unit_cell=unit_cell,
@@ -9149,18 +10267,18 @@ def run(args,
     tracking_data.show_summary(out=out)
   else:
     # get the parameters and map_data (magnified, shifted...)
-    params,map_data,half_map_data_list,pdb_hierarchy,tracking_data=get_params(
+    params,map_data,half_map_data_list,pdb_hierarchy,tracking_data,\
+        shifted_ncs_object=get_params(
        args,map_data=map_data,crystal_symmetry=crystal_symmetry,out=out)
-
-    if params.control.shift_only:
+    if params.control.shift_only or params.control.check_ncs:
       return None,None,tracking_data
 
     if params.input_files.pdb_to_restore:
       restore_pdb(params,tracking_data=tracking_data,out=out)
       return None,None,tracking_data
     # read and write the ncs (Normally point-group NCS)
-    ncs_obj,tracking_data=get_ncs(params,tracking_data=tracking_data,
-       ncs_object=ncs_obj,
+    ncs_obj,tracking_data=get_ncs(params=params,tracking_data=tracking_data,
+       ncs_object=shifted_ncs_object,
        out=out)
 
     if params.input_files.target_ncs_au_file: # read in target
@@ -9168,7 +10286,7 @@ def run(args,
       target_hierarchy=iotbx.pdb.input(
          file_name=params.input_files.target_ncs_au_file).construct_hierarchy()
 
-    print >>out,"\nShifting map, model and NCS based on origin shift (if any)"
+    print >>out,"\nShifting model based on origin shift (if any)"
     print >>out,"Coordinate shift is (%7.2f,%7.2f,%7.2f)" %(
         tuple(tracking_data.origin_shift))
     if not map_data:
@@ -9186,7 +10304,7 @@ def run(args,
           tracking_data.params.output_files.output_directory,
           params.output_files.shifted_pdb_file),
         origin_shift=tracking_data.origin_shift,
-        ncs_object=ncs_obj,
+        shifted_ncs_object=shifted_ncs_object,
         pdb_hierarchy=pdb_hierarchy,
         target_hierarchy=target_hierarchy,
         map_data=map_data,
@@ -9215,18 +10333,20 @@ def run(args,
       local_params=deepcopy(params)
       local_params.crystal_info.solvent_content=tracking_data.solvent_fraction
       from cctbx.maptbx.auto_sharpen import run as auto_sharpen
-      map_data=auto_sharpen(args=[],params=local_params,
+      map_data,new_map_coeffs,new_crystal_symmetry,new_si=auto_sharpen(
+         args=[],params=local_params,
         map_data=map_data,
         crystal_symmetry=tracking_data.crystal_symmetry,
         write_output_files=False,
         pdb_inp=sharpening_target_pdb_inp,
         ncs_obj=ncs_obj,
-        return_map_data_only=True,
+        return_map_data_only=False,
         half_map_data_list=half_map_data_list,
         n_residues=tracking_data.n_residues,
         ncs_copies=tracking_data.input_ncs_info.number_of_operators,
         out=out)
-
+      if not tracking_data.solvent_fraction:
+        tracking_data.solvent_fraction=new_si.solvent_fraction
       update_tracking_data_with_sharpening(
              map_data=map_data,
              tracking_data=tracking_data,out=out)
@@ -9301,8 +10421,9 @@ def run(args,
        out=out)
     if ncs_group_obj and ncs_group_obj.ncs_group_list: # ok
       break
-    elif ncs_obj and itry==0:# try again
-      print >>out,"No NCS groups identified on first try...taking entire NCS AU."
+    elif ncs_obj and itry==0 and not is_iteration:# try again
+      print >>out,\
+          "No NCS groups identified on first try...taking entire NCS AU."
       # Identify ncs au
       au_mask=get_one_au(tracking_data=tracking_data,
         ncs_obj=ncs_obj,

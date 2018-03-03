@@ -523,6 +523,20 @@ class cache(slots_getstate_setstate):
       distance_cutoff=radius).neighbors_of(
         primary_selection=primary_selection)
 
+  def sel_residues_within(self, radius, primary_selection):
+    sel_within = self.sel_within(radius, primary_selection)
+    atoms = self.root.atoms()
+    residue_groups = []
+    for atom, sel in zip(atoms, sel_within):
+      if sel:
+        res_id = atom.parent().parent().id_str()
+        if res_id not in residue_groups:
+          residue_groups.append(res_id)
+          residue_group = atom.parent().parent()
+          for at in residue_group.atoms():
+            sel_within[at.i_seq] = True
+    return sel_within
+
   def selection_tokenizer(self, string, contiguous_word_characters=None):
     return selection_tokenizer(string, contiguous_word_characters)
 
@@ -689,7 +703,7 @@ class cache(slots_getstate_setstate):
                 result_stack.append(self.sel_bfactor(op, val))
               else :
                 result_stack.append(self.sel_occupancy(op, val))
-        elif ((lword == "within") and
+        elif ((lword == "within" or lword=='residues_within') and
               (self.special_position_settings is not None)) :
           assert word_iterator.pop().value == "("
           radius = float(word_iterator.pop().value)
@@ -698,8 +712,12 @@ class cache(slots_getstate_setstate):
             word_iterator=word_iterator,
             callback=callback,
             expect_nonmatching_closing_parenthesis=True)
-          result_stack.append(self.sel_within(radius=radius,
-            primary_selection=sel))
+          if lword=='within':
+            result_stack.append(self.sel_within(radius=radius,
+                                                primary_selection=sel))
+          elif lword=='residues_within':
+            result_stack.append(self.sel_residues_within(radius=radius,
+                                                         primary_selection=sel))
         elif (callback is not None):
           if (not callback(
                     word=word,
@@ -810,6 +828,17 @@ def convert_wildcards_in_chain_id(chain_id):
   chain_id = chain_id.replace("*", "\*")
   return chain_id
 
+def chain_is_needed(selection, chain_selections):
+  def inside(a,b,x):
+    return a <= x <= b
+  if len(chain_selections) == 0:
+    return False
+  result1 = (inside(chain_selections[0][0], chain_selections[-1][-1], selection[0]) or
+    inside(chain_selections[0][0], chain_selections[-1][-1], selection[-1]))
+  result2 = (inside(selection[0], selection[-1], chain_selections[0][0]) or
+    inside(selection[0], selection[-1], chain_selections[-1][-1]))
+  return result1 or result2
+
 def selection_string_from_selection(pdb_h,
                                     selection,
                                     chains_info=None,
@@ -861,10 +890,12 @@ def selection_string_from_selection(pdb_h,
     # print "chains_info[ch_id].atom_selection", chains_info[ch_id].atom_selection
     # this "unfolds" the atom_selection array which is [[],[],[],[]...] into
     # a set
+    if not chain_is_needed(selection, chains_info[ch_id].atom_selection): continue
     a_sel = {x for xi in chains_info[ch_id].atom_selection for x in xi}
-    ch_sel = "chain '%s'" % convert_wildcards_in_chain_id(ch_id)
     test_set = a_sel.intersection(selection_set)
     if not test_set: continue
+    ch_sel = "chain '%s'" % convert_wildcards_in_chain_id(ch_id)
+    # Chain should be present, so do all the work.
     # if there is water in chain, specify residues numbers
     water_present = (len(a_sel) != chains_info[ch_id].chains_atom_number)
     complete_ch_not_present = (test_set != a_sel) or water_present
@@ -1006,17 +1037,16 @@ def selection_string_from_selection(pdb_h,
   # When ready to remove, don't forget to remove atom_selection_cache
   # parameter as well.
   # Current removal date: Jan 22, 2017
-  if atom_selection_cache is None:
-    atom_selection_cache = pdb_h.atom_selection_cache()
-  isel = atom_selection_cache.iselection(sel_str)
-  # pdb_h.select(isel).write_pdb_file("selected_string.pdb")
-  # pdb_h.select(selection).write_pdb_file("selected_isel.pdb")
-  assert len(isel) == len(selection), ""+\
-      "%d (result) != %d (input): conversion to string selects different number of atoms!.\n" \
-      % (len(isel), len(selection)) +\
-      "String lead to error: '%s'" % sel_str
-  # print "sel_str", sel_str
-  # STOP()
+  # Removed on Feb, 7, 2018.
+  # if atom_selection_cache is None:
+  #   atom_selection_cache = pdb_h.atom_selection_cache()
+  # isel = atom_selection_cache.iselection(sel_str)
+  # # pdb_h.select(isel).write_pdb_file("selected_string.pdb")
+  # # pdb_h.select(selection).write_pdb_file("selected_isel.pdb")
+  # assert len(isel) == len(selection), ""+\
+  #     "%d (result) != %d (input): conversion to string selects different number of atoms!.\n" \
+  #     % (len(isel), len(selection)) +\
+  #     "String lead to error: '%s'" % sel_str
   return sel_str
 
 def get_atom_str(atom_str):

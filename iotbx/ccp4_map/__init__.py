@@ -23,8 +23,16 @@ class _(boost.python.injector, ext.map_reader) :
 
   def crystal_symmetry(self):
     from cctbx import crystal
-    return crystal.symmetry(self.unit_cell().parameters(),
-      self.space_group_number)
+    map_all = self.map_data().all()
+    if(map_all != self.unit_cell_grid):
+      a,b,c, al,be,ga = self.unit_cell().parameters()
+      a = a * map_all[0]/self.unit_cell_grid[0]
+      b = b * map_all[1]/self.unit_cell_grid[1]
+      c = c * map_all[2]/self.unit_cell_grid[2]
+      return crystal.symmetry((a,b,c, al,be,ga), self.space_group_number)
+    else:
+      return crystal.symmetry(self.unit_cell().parameters(),
+        self.space_group_number)
 
   def unit_cell (self) :
     from cctbx import uctbx
@@ -36,6 +44,16 @@ class _(boost.python.injector, ext.map_reader) :
 
   def map_data(self):
     return self.data.as_double()
+
+  def is_similar_map(self, other):
+    f1 = self.crystal_symmetry().is_similar_symmetry(other.crystal_symmetry())
+    s = self.map_data()
+    o = other.map_data()
+    f2 = s.focus()  == o.focus()
+    f3 = s.origin() == o.origin()
+    f4 = s.all()    == o.all()
+    if([f1,f2,f3,f4].count(False)>0): return False
+    else: return True
 
   def grid_unit_cell (self) :
     """

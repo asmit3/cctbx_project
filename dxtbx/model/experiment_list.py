@@ -9,6 +9,7 @@
 #  This code is distributed under the BSD license, a copy of which is
 #  included in the root directory of this package.
 from __future__ import absolute_import, division
+import pkg_resources
 from dxtbx.model import Experiment, ExperimentList
 
 class InvalidExperimentListError(RuntimeError):
@@ -50,6 +51,7 @@ class ExperimentListDict(object):
     self._slist = self._extract_models('scan')
     self._clist = self._extract_models('crystal')
     self._plist = self._extract_models('profile')
+    self._scalelist = self._extract_models('scaling_model')
 
     # Go through all the imagesets and make sure the dictionary
     # references by an index rather than a file path. Experiments
@@ -145,6 +147,7 @@ class ExperimentListDict(object):
       scan = ExperimentListDict.model_or_none(self._slist, eobj, 'scan')
       crystal = ExperimentListDict.model_or_none(self._clist, eobj, 'crystal')
       profile = ExperimentListDict.model_or_none(self._plist, eobj, 'profile')
+      scaling_model = ExperimentListDict.model_or_none(self._scalelist, eobj, 'scaling_model')
       key = (eobj.get('imageset'), eobj.get('scan'))
       try:
         imageset = imagesets[key]
@@ -297,7 +300,8 @@ class ExperimentListDict(object):
         goniometer=goniometer,
         scan=scan,
         crystal=crystal,
-        profile=profile))
+        profile=profile,
+        scaling_model=scaling_model))
 
     # Return the experiment list
     return el
@@ -413,6 +417,14 @@ class ExperimentListDict(object):
     return ProfileModelFactory.from_dict(obj)
 
   @staticmethod
+  def _scaling_model_from_dict(obj):
+    ''' Get the scaling model from a dictionary. '''
+    for entry_point in pkg_resources.iter_entry_points(
+      'dxtbx.scaling_model_ext'):
+      if entry_point.name == obj['__id__']:
+        return entry_point.load().from_dict(obj)
+
+  @staticmethod
   def _from_file(filename):
     ''' Load a model dictionary from a file. '''
     from dxtbx.serialize.load import _decode_dict
@@ -463,6 +475,8 @@ class ExperimentListDumper(object):
                   for i, d in enumerate(dictionary['crystal'])]
       plist = [('%s_profile_%d.json' % (basepath, i), d)
                   for i, d in enumerate(dictionary['profile'])]
+      scalelist = [('%s_scaling_model_%d.json' % (basepath, i), d)
+                  for i, d in enumerate(dictionary['scaling_model'])]
 
       # Get the list of experiments
       edict = OrderedDict([
@@ -486,9 +500,11 @@ class ExperimentListDumper(object):
           e['crystal'] = clist[e['crystal']][0]
         if 'profile' in e:
           e['profile'] = plist[e['profile']][0]
+        if 'scaling_model' in e:
+          e['scaling_model'] = scalelist[e['scaling_model']][0]
 
       to_write = ilist + blist + dlist + glist + \
-                 slist + clist + plist + [(filename, edict)]
+                 slist + clist + plist + scalelist + [(filename, edict)]
     else:
       to_write = [(filename, dictionary)]
 

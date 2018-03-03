@@ -9,13 +9,6 @@ import os
 import stat
 import tempfile
 
-def exercise_forward_compatibility():
-  import itertools
-  f = itertools.izip_longest
-  assert list(f([], [])) == []
-  assert list(f([1,2], [3])) == [(1, 3), (2, None)]
-  assert list(f([1], [2,3])) == [(1, 2), (None, 3)]
-
 def exercise_misc():
   utils.host_and_user().show(prefix="### ")
   time_in_seconds = 1.1
@@ -56,8 +49,6 @@ def exercise_misc():
   #
   s = "[0.143139, -0.125121, None, -0.308607]"
   assert numstr(values=eval(s)) == s
-  s = "[0.1431391, -0.1251212, None, -0.3086073]"
-  assert numstr7(values=eval(s)) == s
   #
   for s,i in {"2000000" : 2000000,
               "2k" : 2048,
@@ -390,7 +381,6 @@ def run(args):
     exercise_retrieve_unless_exists()
   else:
     print 'Skipping exercise_retrieve_unless_exists'
-  exercise_forward_compatibility()
   exercise_misc()
   assert utils.sequence_index_dict(["a", "b"]) == {"a": 0, "b": 1}
   assert utils.flat_list(0) == [0]

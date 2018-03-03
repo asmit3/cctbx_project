@@ -96,7 +96,7 @@ def tar_extract(workdir, archive, modulename=None):
     if modulename:
       if modulename != tarfoldername:
         os.rename(tarfoldername, modulename)
-  except Exception, e:
+  except Exception as e:
     raise Exception("Extracting tar archive resulted in error: " + str(e) + "\n" \
       + traceback.format_exc())
     return 1
@@ -157,7 +157,7 @@ class ShellCommand(object):
         if os.path.exists(directory):
           print 'Deleting directory : %s' % directory
           try: shutil.rmtree(directory)
-          except OSError, e:
+          except OSError:
             print "Strangely couldn't delete %s" % directory
       return 0
     if 0:
@@ -179,7 +179,7 @@ class ShellCommand(object):
         stderr=stderr,
         env=env,
       )
-    except Exception, e: # error handling
+    except Exception as e: # error handling
       if not self.kwargs.get('haltOnFailure'):
         return 1
       if isinstance(e, OSError):
@@ -217,7 +217,7 @@ class Toolbox(object):
     if os.path.dirname(file):
       try:
         os.makedirs(os.path.dirname(file))
-      except Exception, e:
+      except Exception:
         pass
 
     localcopy = os.path.isfile(file)
@@ -276,7 +276,7 @@ class Toolbox(object):
         return -2
       # otherwise pass on the error message
       raise
-    except (pysocket.timeout, urllib2.HTTPError), e:
+    except (pysocket.timeout, urllib2.HTTPError) as e:
       if isinstance(e, urllib2.HTTPError) and etag and e.code == 304:
         # When using ETag. a 304 error means everything is fine
         log.write("local copy is current (etag)\n")
@@ -297,7 +297,7 @@ class Toolbox(object):
       # if url fails to open, try using curl
       # temporary fix for old OpenSSL in system Python on macOS
       # https://github.com/cctbx/cctbx_project/issues/33
-      subprocess.call(['/usr/bin/curl', '-o', file, url], stdout=sys.stdout,
+      subprocess.call(['/usr/bin/curl', '-Lo', file, url], stdout=sys.stdout,
                       stderr=sys.stderr)
       socket = None     # prevent later socket code from being run
       received = 1      # satisfy (filesize > 0) checks later on
@@ -411,7 +411,7 @@ class Toolbox(object):
             os.makedirs(filename)
           elif upperdirs and not os.path.exists(upperdirs):
             os.makedirs(upperdirs)
-        except Exception, e: pass
+        except Exception: pass
         if not is_directory:
           source = z.open(member)
           target = file(filename, "wb")
@@ -457,49 +457,6 @@ class Toolbox(object):
       cfg.insert(n, '\trebase = true\n')
     with open(config, 'w') as fh:
       fh.write("".join(cfg))
-
-  @staticmethod
-  def install_git_hooks(basedir, config):
-    if os.name != 'posix':
-      return # Only can do linux/mac
-    hookdir = os.path.join(basedir, '.git', 'hooks')
-    precommit = os.path.join(hookdir, 'pre-commit')
-    if os.path.exists(precommit) and os.access(precommit, os.X_OK):
-      return
-    with open(config, 'r') as fh:
-      cfg = fh.readlines()
-    core = False
-    for n, line in enumerate(cfg):
-      if line.startswith('['):
-        if core:
-          cfg.insert(n, '\twhitespace = blank-at-eol,space-before-tab,tab-in-indent,-blank-at-eof\n')
-          with open(config, 'w') as fh:
-            fh.write("".join(cfg))
-          break
-        core = line.strip() == '[core]'
-      if core and re.match('whitespace\s*=', line.strip()):
-        break
-    with open(precommit, 'w') as fh:
-      fh.write('''#!/bin/sh
-#
-# Ensure committed files do not contain trailing whitespace.
-# Use git commit --no-verify to override.
-
-if git rev-parse --verify HEAD >/dev/null 2>&1
-then
-  against=HEAD
-else
-  # Initial commit: diff against an empty tree object
-  against=4b825dc642cb6eb9a060e54bf8d69288fbee4904
-fi
-
-# If there are whitespace errors, print the offending file names and abort the commit.
-exec git diff-index --check --cached $against --
-''')
-      mode = os.fstat(fh.fileno()).st_mode
-      mode |= (mode & 0o444) >> 2
-      os.fchmod(fh.fileno(), mode & 0o7777)
-    print("Installed git pre-commit clutter detection in %s" % basedir)
 
   @staticmethod
   def git(module, parameters, destination=None, use_ssh=False, verbose=False, reference=None):
@@ -693,7 +650,7 @@ class SourceModule(object):
     repo = None
     try:
       repo = self.get_authenticated(auth=auth)
-    except KeyError, e:
+    except KeyError as e:
       repo = self.get_anonymous()
       if not repo:
         raise Exception('No anonymous access method defined for module: %s. Try with --%s'%(self.module, e.args[0]))
@@ -831,8 +788,10 @@ class ccp4io_adaptbx(SourceModule):
 
 class annlib_adaptbx(SourceModule):
   module = 'annlib_adaptbx'
-  anonymous = ['curl', 'http://cci.lbl.gov/repositories/annlib_adaptbx.gz']
-  authenticated = ['svn', 'svn+ssh://%(cciuser)s@cci.lbl.gov/annlib_adaptbx/trunk']
+  anonymous = ['git',
+               'git@github.com:cctbx/annlib_adaptbx.git',
+               'https://github.com/cctbx/annlib_adaptbx.git',
+               'https://github.com/cctbx/annlib_adaptbx/archive/master.zip']
 
 class tntbx_module(SourceModule):
   module = 'tntbx'
@@ -1043,6 +1002,7 @@ class Builder(object):
       skip_base="",
       force_base_build=False,
       enable_shared=False,
+      mpi_build=False,
       python3=False,
     ):
     if nproc is None:
@@ -1112,6 +1072,8 @@ class Builder(object):
       extra_opts = ["--nproc=%s" % str(self.nproc)]
       if enable_shared:
         extra_opts.append("--python-shared")
+      if mpi_build:
+        extra_opts.append("--mpi-build")
       self.add_base(extra_opts=extra_opts)
 
     # Configure, make, get revision numbers
@@ -1735,6 +1697,104 @@ class MOLPROBITYBuilder(Builder):
   def rebuild_docs(self):
     pass
 
+class PhaserBuilder(CCIBuilder):
+  BASE_PACKAGES = 'cctbx'
+    # Checkout these codebases
+  CODEBASES = [
+    'boost',
+    'cctbx_project',
+    'ccp4io_adaptbx',
+    'annlib_adaptbx',
+    'tntbx',
+    'clipper',
+    'phaser_regression',
+    'phaser',
+  ]
+  # Configure for these cctbx packages
+  LIBTBX = [
+    'cctbx',
+    'scitbx',
+    'libtbx',
+    'iotbx',
+    'mmtbx',
+    'smtbx',
+    'phaser_regression',
+    'phaser',
+  ]
+
+  def add_tests(self):
+    self.add_test_command('libtbx.import_all_python', workdir=['modules', 'cctbx_project'])
+    self.add_test_command('cctbx_regression.test_nightly')
+
+  def add_base(self, extra_opts=[]):
+    # skip unnecessary base packages when building phaser only
+    if self.skip_base is None or len(self.skip_base) == 0:
+      self.skip_base = "hdf5,lz4_plugin,wxpython,docutils,pyopengl,pillow,tiff," + \
+        "cairo,fonts,render,fontconfig,pixman,png,sphinx,freetype,gtk,matplotlib,"
+    else:
+      self.skip_base = ','.join(self.skip_base.split(',') + ['hdf5','lz4_plugin',
+         'wxpython','docutils','pyopengl','pillow','tiff','cairo','fonts', 'matplotlib',
+         'fontconfig','render','pixman','png','sphinx','freetype','gtk'])
+    super(PhaserBuilder, self).add_base(
+      extra_opts=['--cctbx',
+                 ] + extra_opts)
+
+  def add_dispatchers(self):
+    pass
+
+  def rebuild_docs(self):
+    pass
+
+  def get_libtbx_configure(self):
+    configlst = super(PhaserBuilder, self).get_libtbx_configure()
+    if not self.isPlatformMacOSX():
+      configlst.append("--enable_openmp_if_possible=True")
+    return configlst
+
+
+class CCTBXLiteBuilder(CCIBuilder):
+  BASE_PACKAGES = 'cctbx'
+    # Checkout these codebases
+  CODEBASES = [
+    'boost',
+    'cctbx_project',
+    'gui_resources',
+    'ccp4io_adaptbx',
+    'annlib_adaptbx',
+    'tntbx',
+    'clipper'
+  ]
+  # Configure for these cctbx packages
+  LIBTBX = [
+    'cctbx',
+    'scitbx',
+    'libtbx',
+    'iotbx',
+    'mmtbx',
+    'smtbx',
+    'gltbx',
+    'wxtbx',
+  ]
+
+  def add_tests(self):
+    self.add_test_command('libtbx.import_all_python', workdir=['modules', 'cctbx_project'])
+    self.add_test_command('cctbx_regression.test_nightly')
+
+  def add_base(self, extra_opts=[]):
+    if self.skip_base is None or len(self.skip_base) == 0:
+      self.skip_base = "hdf5,lz4_plugin"
+    else:
+      self.skip_base = ','.join(self.skip_base.split(',') + ['hdf5','lz4_plugin'])
+    super(CCTBXLiteBuilder, self).add_base(
+      extra_opts=['--cctbx',
+                 ] + extra_opts)
+
+  def add_dispatchers(self):
+    pass
+
+  def rebuild_docs(self):
+    pass
+
 class CCTBXBuilder(CCIBuilder):
   BASE_PACKAGES = 'cctbx'
   def add_tests(self):
@@ -2248,11 +2308,24 @@ def run(root=None):
     python bootstrap.py --builder=cctbx --sfuser=metalheadd hot update build tests
 
   """
+  builders = {
+    'cctbxlite': CCTBXLiteBuilder,
+    'cctbx': CCTBXBuilder,
+    'phenix': PhenixBuilder,
+    'xfel': XFELBuilder,
+    'labelit': LABELITBuilder,
+    'dials': DIALSBuilder,
+    'external': PhenixExternalRegression,
+    'molprobity':MOLPROBITYBuilder,
+    'qrefine': QRBuilder,
+    'phaser': PhaserBuilder,
+  }
+
   parser = optparse.OptionParser(usage=usage)
   # parser.add_option("--root", help="Root directory; this will contain base, modules, build, etc.")
   parser.add_option(
     "--builder",
-    help="Builder: cctbx, phenix, xfel, dials, labelit, molprobity",
+    help="Builder: " + ",".join(builders.keys()),
     default="cctbx")
   parser.add_option("--cciuser", help="CCI SVN username.")
   parser.add_option("--sfuser", help="SourceForge SVN username.")
@@ -2298,6 +2371,11 @@ def run(root=None):
                     dest="enable_shared",
                     action="store_true",
                     default=False)
+  parser.add_option("--mpi-build",
+                    dest="mpi_build",
+                    help="Builds software with mpi functionality",
+                    action="store_true",
+                    default=False)
   parser.add_option("--python3",
                     dest="python3",
                     help="Install a Python3 interpreter. This is unsupported and purely for development purposes.",
@@ -2329,16 +2407,6 @@ def run(root=None):
   print "Performing actions:", " ".join(actions)
 
   # Check builder
-  builders = {
-    'cctbx': CCTBXBuilder,
-    'phenix': PhenixBuilder,
-    'xfel': XFELBuilder,
-    'labelit': LABELITBuilder,
-    'dials': DIALSBuilder,
-    'external': PhenixExternalRegression,
-    'molprobity':MOLPROBITYBuilder,
-    'qrefine': QRBuilder,
-  }
   if options.builder not in builders:
     raise ValueError("Unknown builder: %s"%options.builder)
 
@@ -2372,6 +2440,7 @@ def run(root=None):
     skip_base=options.skip_base,
     force_base_build=options.force_base_build,
     enable_shared=options.enable_shared,
+    mpi_build=options.mpi_build,
     python3=options.python3,
   ).run()
   print "\nBootstrap success: %s" % ", ".join(actions)

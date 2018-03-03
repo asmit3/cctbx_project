@@ -1,13 +1,56 @@
-from __future__ import division
-import os
-import sys
+from __future__ import division, print_function
 
+import os, sys
+
+from iotbx.cli_parser import CCTBXParser
+from libtbx.utils import multi_out, show_total_time
+from mmtbx.programs import prepare_pdb_deposition
+
+# =============================================================================
+def run(args):
+
+  # create parser
+  logger = multi_out() #logging.getLogger('main')
+  logger.register('stdout', sys.stdout)
+
+  parser = CCTBXParser(
+    program_class=prepare_pdb_deposition.Program,
+    logger=logger)
+  namespace = parser.parse_args(sys.argv[1:])
+
+  # start program
+  print('Starting job', file=logger)
+  print('='*79, file=logger)
+  task = prepare_pdb_deposition.Program(
+    parser.data_manager, parser.working_phil.extract(), logger=logger)
+
+  # validate inputs
+  task.validate()
+
+  # run program
+  task.run()
+
+  # stop timer
+  print('', file=logger)
+  print('='*79, file=logger)
+  print('Job complete', file=logger)
+  show_total_time(out=logger)
+
+# =============================================================================
+if __name__ == '__main__':
+  run(sys.argv[1:])
+
+
+
+
+
+# =============================================================================
+# old code
 import iotbx.phil
 from iotbx.file_reader import any_file
 from iotbx.pdb import mmcif
 from mmtbx.command_line import model_vs_sequence
 from iotbx.cif import category_sort_function
-
 
 master_phil = iotbx.phil.parse("""
 include scope mmtbx.command_line.cc_star.master_phil
@@ -41,7 +84,7 @@ include scope mmtbx.validation.sequence.master_phil
 """, process_includes=True)
 
 
-def run(args, out=None):
+def old_run(args, out=None):
   import iotbx.phil
   if (out is None) :
     out = sys.stdout
@@ -94,6 +137,3 @@ def run(args, out=None):
   with open(params.output.cif_file, "wb") as f:
     print >> f, cif_model
   return
-
-if __name__ == '__main__':
-  run(sys.argv[1:])

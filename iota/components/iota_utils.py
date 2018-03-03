@@ -20,6 +20,7 @@ from collections import Counter
 class InputFinder():
   def __init__(self):
     self.images = ['cbf', 'img', 'corr', 'mccd', 'marccd', 'mar']
+    self.datafiles = ['mtz', 'hkl']
     self.sequences = ['seq', 'fasta']
     self.pickles = ['pickle', 'int']
     self.texts = ['txt', 'lst', 'phil', 'param']
@@ -114,7 +115,11 @@ class InputFinder():
       elif e in self.texts:
         filetype = 'text'
       elif e == 'mtz':
-        filetype = 'reference MTZ'
+        filetype = 'data (MTZ)'
+      elif e == 'hkl':
+        filetype = 'data (HKL)'
+      elif e == 'pdb':
+        filetype = 'coordinates'
       else:
         filetype = 'unidentified'
 
@@ -228,7 +233,7 @@ class InputFinder():
     except Exception:
       return 'text'
 
-  def get_input(self, path, filter=True, last=None):
+  def get_input(self, path, filter=True, filter_type='image', last=None):
     ''' Obtain list of files (or single file) from any input; obtain file type in input
     :param path: path to input file(s) or folder(s)
     :return: input_list: list of input file(s) (could be just one file)
@@ -247,7 +252,6 @@ class InputFinder():
           suffix = 'list'
       else:
         input_list = [os.path.abspath(path)]
-        input_type = self.identify_file_type(path)
     elif os.path.isdir(path):
       input_list = self.get_file_list(path, last=last)
       suffix = "folder"
@@ -260,7 +264,7 @@ class InputFinder():
         filepath in input_list]
 
       if filter:
-        input_pairs = [i for i in input_pairs if 'image' in i[1]]
+        input_pairs = [i for i in input_pairs if filter_type in i[1]]
         input_pairs = [i for i in input_pairs if not '_tmp' in i[0]]
 
       if len(input_pairs) > 0:
@@ -297,7 +301,10 @@ class InputFinder():
     else:
       return 'unknown'
 
-  def make_input_list(self, input_entries, last=None):
+  def make_input_list(self, input_entries,
+                      filter=False,
+                      filter_type=None,
+                      last=None):
     ''' Makes input list from multiple entries
     :param input_entries: a list of input paths
     :return: input list: a list of input files
@@ -306,7 +313,9 @@ class InputFinder():
     input_list = []
     for path in input_entries:
       if path is not None:
-        filepaths, _ = self.get_input(path, last=last)
+        filepaths, _ = self.get_input(path, filter=filter,
+                                      filter_type=filter_type,
+                                      last=last)
         input_list.extend(filepaths)
     return input_list
 

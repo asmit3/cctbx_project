@@ -309,6 +309,7 @@ namespace boost_python { namespace {
       nanoBragg.c_star[2] = value(2,1);
       nanoBragg.c_star[3] = value(2,2);
       nanoBragg.user_cell = 0;
+      nanoBragg.user_matrix = 1;
       /* re-generate cell structure and apply any missetting angles to it */
       nanoBragg.init_cell();
 //      reconcile_parameters();
@@ -815,7 +816,20 @@ printf("DEBUG: pythony_stolFbg[1]=(%g,%g)\n",nanoBragg.pythony_stolFbg[1][0],nan
 
   /* X-ray wavelength */
   static double get_lambda_A(nanoBragg const& nanoBragg) {return nanoBragg.lambda0*1e10;}
-  static void   set_lambda_A(nanoBragg& nanoBragg, double const& value) {nanoBragg.lambda0 = value/1e10;}
+  static void   set_lambda_A(nanoBragg& nanoBragg, double const& value) {
+      nanoBragg.lambda0 = value/1e10;
+
+      /* override any other provided lambda values, so they don't override us */
+      int n = nanoBragg.pythony_source_lambda.size();
+      if(n > 0 ) {
+          printf("WARNING: resetting %d source wavelengths to %f A\n",n,value);
+          for(int i=0;i<n;++i){
+            nanoBragg.pythony_source_lambda[i] = value;
+          }
+      }
+      /* re-initialize source table */
+      nanoBragg.init_sources();
+  }
   /* X-ray wavelength from energy */
   static double get_energy_eV(nanoBragg const& nanoBragg) {return 12398.42/(nanoBragg.lambda0*1e10);}
   static void   set_energy_eV(nanoBragg& nanoBragg, double const& value) {nanoBragg.lambda0 = (12398.42/value)/1e10;}
@@ -1199,6 +1213,11 @@ printf("DEBUG: pythony_stolFbg[1]=(%g,%g)\n",nanoBragg.pythony_stolFbg[1][0],nan
                      make_getter(&nanoBragg::progress_meter,rbv()),
                      make_setter(&nanoBragg::progress_meter,dcp()),
                      "toggle screen printing of simulation progress in percent.")
+      /* expose image rendering progress */
+      .add_property("progress_pixel",
+                     make_getter(&nanoBragg::progress_pixel,rbv()),
+                     make_setter(&nanoBragg::progress_pixel,dcp()),
+                     "Pixel number that is currently being rendered.")
 
 
 
@@ -1677,10 +1696,6 @@ printf("DEBUG: pythony_stolFbg[1]=(%g,%g)\n",nanoBragg.pythony_stolFbg[1][0],nan
       /* actual run of the spot simulation */
       .def("add_nanoBragg_spots",&nanoBragg::add_nanoBragg_spots,
        "actually run the spot simulation, going pixel-by-pixel over the region-of-interst")
-
-      /* actual run of the spot simulation, restricted implementation plus OpenMP */
-      .def("add_nanoBragg_spots_nks",&nanoBragg::add_nanoBragg_spots_nks,
-       "actually run the spot simulation, going pixel-by-pixel over the region-of-interest, restricted options, plus OpenMP")
 
       /* actual run of the background simulation */
       .def("add_background",&nanoBragg::add_background,

@@ -352,7 +352,17 @@ namespace dxtbx { namespace model { namespace boost_python {
             arg("space_group_symbol"))))
       .def_pickle(CrystalPickleSuite());
 
-    class_ <MosaicCrystalKabsch2010, bases <CrystalBase> > ("MosaicCrystalKabsch2010", no_init)
+    // Create member-function pointers to specific is_simiar_to overloads
+    // - each of these crystals has a custom implementation along with the
+    //   inherited interface, and we want to expose these explicitly
+    bool (MosaicCrystalKabsch2010::*kabsch_is_similar_to)(
+        const CrystalBase &, double, double, double, double) const =
+        &MosaicCrystalKabsch2010::is_similar_to;
+    bool (MosaicCrystalSauter2014::*sauter_is_similar_to)(
+        const CrystalBase &, double, double, double, double, double) const =
+        &MosaicCrystalSauter2014::is_similar_to;
+
+    class_ <MosaicCrystalKabsch2010, bases <Crystal> > ("MosaicCrystalKabsch2010", no_init)
       .def(init<const MosaicCrystalKabsch2010&>())
       .def(init<const Crystal&>())
       .def("__init__",
@@ -371,7 +381,7 @@ namespace dxtbx { namespace model { namespace boost_python {
             arg("real_space_b"),
             arg("real_space_c"),
             arg("space_group_symbol"))))
-      .def("is_similar_to", &MosaicCrystalKabsch2010::is_similar_to, (
+      .def("is_similar_to", kabsch_is_similar_to, (
             arg("other"),
             arg("angle_tolerance")=0.01,
             arg("uc_rel_length_tolerance")=0.01,
@@ -384,7 +394,7 @@ namespace dxtbx { namespace model { namespace boost_python {
             arg("deg")=true))
       .def_pickle(MosaicCrystalKabsch2010PickleSuite());
 
-    class_ <MosaicCrystalSauter2014, bases <CrystalBase> > ("MosaicCrystalSauter2014", no_init)
+    class_ <MosaicCrystalSauter2014, bases <Crystal> > ("MosaicCrystalSauter2014", no_init)
       .def(init<const MosaicCrystalSauter2014&>())
       .def(init<const Crystal&>())
       .def("__init__",
@@ -403,7 +413,7 @@ namespace dxtbx { namespace model { namespace boost_python {
             arg("real_space_b"),
             arg("real_space_c"),
             arg("space_group_symbol"))))
-      .def("is_similar_to", &MosaicCrystalSauter2014::is_similar_to, (
+      .def("is_similar_to", sauter_is_similar_to, (
             arg("other"),
             arg("angle_tolerance")=0.01,
             arg("uc_rel_length_tolerance")=0.01,

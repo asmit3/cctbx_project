@@ -2,10 +2,9 @@
 #
 # $Id$
 
-from __future__ import division
+from __future__ import absolute_import, division, print_function
 import logging
 
-import libtbx
 from xfel.cxi.cspad_ana import cspad_tbx
 from xfel.cxi.cspad_ana import skip_event_flag
 
@@ -195,9 +194,9 @@ class laser_status(object):
   def __init__(self, laser_id, status=None):
     self._status = status
 
-  class status(libtbx.property):
-    def fget(self):
-      return self._status
+  @property
+  def status(self):
+    return self._status
 
   def set_status(self, status, evt_time):
     if self._status is not None and self._status != status:

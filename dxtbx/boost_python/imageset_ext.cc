@@ -11,6 +11,7 @@
 namespace dxtbx { namespace boost_python {
 
   using model::OffsetParallaxCorrectedPxMmStrategy;
+  using model::OffsetPxMmStrategy;
 
   namespace detail {
 
@@ -555,10 +556,17 @@ namespace dxtbx { namespace boost_python {
             panel.get_px_mm_strategy()->name() == "OffsetParallaxCorrectedPxMmStrategy") {
           boost::shared_ptr<OffsetParallaxCorrectedPxMmStrategy> strategy = boost::make_shared<
             OffsetParallaxCorrectedPxMmStrategy>(
-          panel.get_mu(),
-          panel.get_thickness(),
-          dx.tile(i).data(),
-          dy.tile(i).data());
+              panel.get_mu(),
+              panel.get_thickness(),
+              dx.tile(i).data(),
+              dy.tile(i).data());
+          panel.set_px_mm_strategy(strategy);
+        } else if (
+            panel.get_px_mm_strategy()->name() == "SimplePxMmStrategy" ||
+            panel.get_px_mm_strategy()->name() == "OffsetPxMmStrategy") {
+          boost::shared_ptr<OffsetPxMmStrategy> strategy = boost::make_shared<OffsetPxMmStrategy>(
+            dx.tile(i).data(),
+            dy.tile(i).data());
           panel.set_px_mm_strategy(strategy);
         }
       }
@@ -586,10 +594,17 @@ namespace dxtbx { namespace boost_python {
           panel.get_px_mm_strategy()->name() == "OffsetParallaxCorrectedPxMmStrategy") {
         boost::shared_ptr<OffsetParallaxCorrectedPxMmStrategy> strategy = boost::make_shared<
           OffsetParallaxCorrectedPxMmStrategy>(
-        panel.get_mu(),
-        panel.get_thickness(),
-        dx.tile(i).data(),
-        dy.tile(i).data());
+          panel.get_mu(),
+          panel.get_thickness(),
+          dx.tile(i).data(),
+          dy.tile(i).data());
+        panel.set_px_mm_strategy(strategy);
+      } else if (
+          panel.get_px_mm_strategy()->name() == "SimplePxMmStrategy" ||
+          panel.get_px_mm_strategy()->name() == "OffsetPxMmStrategy") {
+        boost::shared_ptr<OffsetPxMmStrategy> strategy = boost::make_shared<OffsetPxMmStrategy>(
+          dx.tile(i).data(),
+          dy.tile(i).data());
         panel.set_px_mm_strategy(strategy);
       }
     }
@@ -649,6 +664,8 @@ namespace dxtbx { namespace boost_python {
       .def("get_path", &ImageSetData::get_path)
       .def("get_master_path", &ImageSetData::get_master_path)
       .def("get_image_identifier", &ImageSetData::get_image_identifier)
+      .def("mark_for_rejection", &ImageSetData::mark_for_rejection)
+      .def("is_marked_for_rejection", &ImageSetData::is_marked_for_rejection)
       .def("get_beam", &ImageSetData::get_beam)
       .def("get_detector", &ImageSetData::get_detector)
       .def("get_goniometer", &ImageSetData::get_goniometer)
@@ -715,6 +732,8 @@ namespace dxtbx { namespace boost_python {
             arg("index") = 0))
       .def("get_path", &ImageSet::get_path)
       .def("get_image_identifier", &ImageSet::get_image_identifier)
+      .def("mark_for_rejection", &ImageSet::mark_for_rejection)
+      .def("is_marked_for_rejection", &ImageSet::is_marked_for_rejection)
       .def("as_imageset", &ImageSet::as_imageset)
       .def("complete_set", &ImageSet::complete_set)
       .def("partial_set", &ImageSet::partial_set)

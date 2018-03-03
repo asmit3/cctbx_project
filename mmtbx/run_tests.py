@@ -59,6 +59,7 @@ tst_list = (
   "$D/regression/tst_model.py",
   "$D/regression/tst_model_mtrix.py",
   "$D/regression/tst_model_2.py",
+  "$D/regression/tst_model_biomt_mtrix.py",
   "$D/regression/tst_fmodel.py",
   "$D/regression/tst_utils.py",
   "$D/regression/tst_alignment.py",
@@ -68,10 +69,10 @@ tst_list = (
   "$D/maps/tst_composite_omit_map_3.py",
   "$D/maps/tst_correlation.py",
   "$D/regression/ncs/tst_ncs_utils.py",
+  "$D/regression/ncs/tst_ncs_restraints_group_list.py",
   "$D/regression/ncs/tst_ncs_search.py",
   "$D/regression/ncs/tst_ncs_search_flips.py",
   "$D/regression/ncs/tst_restraints.py",
-  "$D/regression/ncs/tst_restraints_2.py",
   "$D/regression/ncs/tst_asu_as_one_ncs_copy.py",
   "$D/regression/ncs/tst_geometry_minimization_ncs_constraints.py",
   "$D/regression/tst_geometry_minimization.py",
@@ -143,7 +144,6 @@ tst_list = (
   "$D/bulk_solvent/tst_aniso_scaler.py",
   "$D/bulk_solvent/tst_kb_sol_u_star_fd.py",
   #
-  "$D/alignment.py",
   "$D/invariant_domain.py",
   # restraints
   "$D/regression/tst_psi_phi_extraction.py",
@@ -222,6 +222,7 @@ tst_list = (
   "$D/validation/regression/tst_mp_geo.py",
   "$D/validation/regression/tst_rotalyze.py",
   "$D/validation/regression/tst_ramalyze.py",
+  "$D/validation/regression/tst_ramalyze2.py",
   "$D/validation/regression/tst_cbetadev.py",
   "$D/validation/regression/tst_clashscore.py",
   "$D/validation/regression/tst_restraints.py",
@@ -344,6 +345,14 @@ tst_list = (
   "$D/regression/tst_flip_symmetric.py",
   "$D/regression/tst_superpose.py",
   "$D/monomer_library/tst_server.py",
+  #
+  "$D/geometry/tests/tst_altloc.py",
+  "$D/geometry/tests/tst_asa.py",
+  "$D/geometry/tests/tst_clash.py",
+  "$D/geometry/tests/tst_indexing.py",
+  "$D/geometry/tests/tst_shared_types.py",
+  "$D/geometry/tests/tst_sphere_surface_sampling.py",
+  "$D/geometry/tests/tst_topology.py",
   )
 
 def run():

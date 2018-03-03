@@ -120,10 +120,10 @@ class ExGauss():
     while np.abs((unew-uold)/uold) > eps:
       count +=1
       uold=unew
-    if self.gauss_cdf(uold, v*v,v) == 0.0:
-      unew = v*math.sqrt(2)*self.inverse_erf(2*y-1)
-    else:
-      unew = (v*v/2.0)+np.log(1.0*self.gauss_cdf(uold, v*v,v)/(self.gauss_cdf(uold,0.,v)-y))
+      if self.gauss_cdf(uold, v*v,v) == 0.0:
+        unew = v*math.sqrt(2)*self.inverse_erf(2*y-1)
+      else:
+        unew = (v*v/2.0)+np.log(1.0*self.gauss_cdf(uold, v*v,v)/(self.gauss_cdf(uold,0.,v)-y))
 #    try:
 #      unew = np.log(np.exp(v*v/2)*self.gauss_cdf(uold, v*v,v)/(self.gauss_cdf(uold,0.,v)-y))
 #    except:
@@ -132,7 +132,6 @@ class ExGauss():
 #    print 'true cdf value from iter and niter = ',self.exgauss_cdf(unew*self.tau+self.mu),count
 #    if np.isnan(unew):
 #      from IPython import embed; embed();exit()      
-      
     return unew*self.tau+self.mu
 
 # See https://www.av8n.com/physics/arbitrary-probability.htm 

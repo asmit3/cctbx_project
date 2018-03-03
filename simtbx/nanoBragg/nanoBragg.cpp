@@ -475,6 +475,7 @@ nanoBragg::init_defaults()
 
     /* unit cell stuff */
     user_cell = 0;
+    user_matrix = 0;
 //    double a[4] = {0,0,0,0}; this->a = a;
 //    double b[4] = {0,0,0,0}; this->b = b;
 //    double c[4] = {0,0,0,0}; this->c = c;
@@ -1226,7 +1227,7 @@ void
 nanoBragg::init_cell()
 {
     /* do not run if things are not going to work */
-    if(! user_cell && matfilename == NULL)
+    if(! user_cell && ! user_matrix && matfilename == NULL)
     {
         if(verbose) printf("ERROR: cannot initialize without a cell\n");
         return;
@@ -1402,9 +1403,9 @@ nanoBragg::init_cell()
     sin_alpha = a_star[0]*V_cell/b_A[0]/c_A[0];
     sin_beta  = b_star[0]*V_cell/a_A[0]/c_A[0];
     sin_gamma = c_star[0]*V_cell/a_A[0]/b_A[0];
-    cos_alpha = dot_product(b,c)/b_A[0]/c_A[0];
-    cos_beta  = dot_product(a,c)/a_A[0]/c_A[0];
-    cos_gamma = dot_product(a,b)/a_A[0]/b_A[0];
+    cos_alpha = dot_product(b_A,c_A)/b_A[0]/c_A[0];
+    cos_beta  = dot_product(a_A,c_A)/a_A[0]/c_A[0];
+    cos_gamma = dot_product(a_A,b_A)/a_A[0]/b_A[0];
     if(sin_alpha>1.0000001 || sin_alpha<-1.0000001 ||
        sin_beta >1.0000001 || sin_beta <-1.0000001 ||
        sin_gamma>1.0000001 || sin_gamma<-1.0000001 ||
@@ -1508,9 +1509,9 @@ void
 nanoBragg::update_oversample()
 {
     /* now we know the cell, calculate crystal size in meters */
-    if(xtal_size_x > 0) Na = ceil(xtal_size_x/a[0]);
-    if(xtal_size_y > 0) Nb = ceil(xtal_size_y/b[0]);
-    if(xtal_size_z > 0) Nc = ceil(xtal_size_z/c[0]);
+    if(xtal_size_x > 0) Na = ceil(xtal_size_x/a[0]-1e-6);
+    if(xtal_size_y > 0) Nb = ceil(xtal_size_y/b[0]-1e-6);
+    if(xtal_size_z > 0) Nc = ceil(xtal_size_z/c[0]-1e-6);
     if(Na <= 1.0) Na = 1.0;
     if(Nb <= 1.0) Nb = 1.0;
     if(Nc <= 1.0) Nc = 1.0;
@@ -1774,7 +1775,7 @@ nanoBragg::init_background()
         /* allocate memory for counting how many of these get used */
         /* starting point for pixel value data for each stol-bin */
         if(verbose>6) printf("allocating %d %ld-byte double *s for bin_start\n",stols,sizeof(double *));
-        bin_start = (double **) calloc(stols,sizeof(double *));
+        bin_start = (double **) calloc(stols+2,sizeof(double *));
         /* storage for counting number of pixels in each bin */
         if(verbose>6) printf("allocating %d %ld-byte unsigned ints for pixels_in\n",stols,sizeof(unsigned int));
         pixels_in = (unsigned int *) calloc(stols,sizeof(unsigned int));
@@ -3212,7 +3213,7 @@ nanoBragg::extract_background(int source)
     /* now we need to organize Fpixel data into bins */
 
     /* set up pointers with enough space after each of them (2*n for median/mad filter) */
-    bin_start[0]= (double *) calloc(2*pixels+10*stols,sizeof(float));
+    bin_start[0]= (double *) calloc(2*pixels+10*stols,sizeof(double));
     ++bin_start[0];
     for(bin=1;bin<stols-1;++bin)
     {
@@ -3261,6 +3262,8 @@ nanoBragg::extract_background(int source)
     }
 
     if(verbose) printf("done with radial median filter\n");
+
+    /* now we need to copy back into pythony array */
 }
 // end of extract_background()
 
@@ -4689,9 +4692,11 @@ double fmedian(unsigned int n, double arr[])
 double fmedian_with_rejection(unsigned int n, double arr[],double sigma_cutoff, double *final_mad, int *final_n)
 {
     double median_value;
-    int i,done;
-    double deviate,mad;
+    int i,orig_n,done;
+    double min_frac,deviate,mad;
 
+    orig_n = n;
+    min_frac = 0.7;
 
     done = 0;
     while(! done)

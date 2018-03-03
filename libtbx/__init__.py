@@ -1,4 +1,4 @@
-from __future__ import division
+from __future__ import absolute_import, division, print_function
 import libtbx.forward_compatibility
 import os
 import sys
@@ -7,7 +7,7 @@ manual_date_stamp = 20090819
 
 def _STOP(exit_status=0):
   f = sys._getframe(1)
-  print "STOP: %s(%d)" % (f.f_code.co_filename, f.f_lineno)
+  print("STOP: %s(%d)" % (f.f_code.co_filename, f.f_lineno))
   sys.exit(exit_status)
 __builtins__["STOP"] = _STOP
 
@@ -31,13 +31,6 @@ def _numstr(
   return brackets[0] + sep.join(flds) + brackets[1]
 __builtins__["numstr"] = _numstr
 
-def _numstr7(values): return numstr(values=values, fmt="%.7g")
-__builtins__["numstr7"] = _numstr7
-
-def _real_imag(complex_number):
-  return (complex_number.real, complex_number.imag)
-__builtins__["real_imag"] = _real_imag
-
 class AutoType(object):
   """
   Class for creating the Auto instance, which mimics the behavior of None
@@ -51,9 +44,9 @@ class AutoType(object):
   ...        optional = 5
   ...    return optional
   ...
-  >>> print f()
+  >>> print(f())
   5
-  >>> print f(optional=10)
+  >>> print(f(optional=10))
   10
   """
   singleton = None
@@ -136,7 +129,7 @@ class slots_getstate_setstate_default_initializer (slots_getstate_setstate) :
   ...     __slots__ = ["i_seq", "j_seq"]
   ...
   >>> svm_pair(i_seq=1, j_seq=2)
-  >>> print svm_pair.i_seq
+  >>> print(svm_pair.i_seq)
   1
   """
   def __init__ (self, **kwds) :
@@ -175,23 +168,9 @@ def only_element(sequence):
     s = "contains %d elements" % n
   raise RuntimeError("sequence %s (exactly one element expected)" % s)
 
-if (getattr(sys, "api_version", 0) >= 1013):
-
-  class dict_with_default_0(dict):
-
-    def __missing__(self, key):
-      return 0
-
-else:
-
-  class dict_with_default_0(dict):
-
-    def __getitem__(self, key):
-      try: return dict.__getitem__(self, key)
-      except KeyError: pass
-      val = 0
-      dict.__setitem__(self, key, val)
-      return val
+class dict_with_default_0(dict):
+  def __missing__(self, key):
+    return 0
 
 def adopt_init_args(obj, args, exclude=(), hide=False):
   """
@@ -261,16 +240,6 @@ def adopt_optional_init_args(obj, kwds):
                          % (k, obj.__class__))
     setattr(obj, k, v)
 
-class copy_init_args(object):
-
-  def __init__(self, args, exclude=()):
-    if ("self" in args): del args["self"]
-    else:                del args["O"]
-    del args["self"]
-    for param in exclude:
-      del args[param]
-    self.__dict__.update(args)
-
 class group_args(object):
   """
   Class to build an arbitrary object from a list of keyword arguments.
@@ -279,7 +248,7 @@ class group_args(object):
   --------
   >>> from libtbx import group_args
   >>> obj = group_args(a=1, b=2, c=3)
-  >>> print obj.a, obj.b, obj.c
+  >>> print(obj.a, obj.b, obj.c)
   1 2 3
   """
 
@@ -304,10 +273,10 @@ class group_args(object):
     Overwrites matching fields!!!"""
     self.__dict__.update(other.__dict__)
 
-if (os.environ.has_key("LIBTBX_PRINT_TRACE")):
+if os.environ.get("LIBTBX_PRINT_TRACE"):
   import libtbx.start_print_trace
 
-if (sys.platform == "cygwin"):
+if sys.platform == "cygwin":
   # work around cygwin problem: open() doesn't work on symbolic links
   builtin_open = __builtins__["open"]
   def open_realpath(name, mode="r", buffering=-1):
@@ -318,34 +287,3 @@ if (sys.platform == "cygwin"):
     return builtin_open(name, mode, buffering)
   __builtins__["open"] = open_realpath
   __builtins__["file"] = open_realpath
-
-
-class property(object):
-  """
-  Syntactic sugar for defining class properties for those poor souls
-  who must stay compatible with older versions of Python which do not
-  feature the @property decorator.
-
-  Examples
-  --------
-  >>> class foo(object):
-  ...     class bar(libtbx.property):
-  ...         'documentation of the property'
-  ...         # In the following, self is the object featuring the property.
-  ...         def fget(self): # getter
-  ...         def fset(self, value): # setter
-  ...         def fdel(self): # deleter
-  """
-
-  class __metaclass__(type):
-
-    def __new__(meta, name, bases, defs):
-      if bases == (object,):
-        # this is this class
-        return type.__new__(meta, name, bases, defs)
-      else:
-        # this is some heir of this class
-        return __builtins__['property'](fget=defs.get("fget"),
-                                        fset=defs.get("fset"),
-                                        fdel=defs.get("fdel"),
-                                        doc=defs.get("__doc__"))

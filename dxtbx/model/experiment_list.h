@@ -412,9 +412,11 @@ namespace dxtbx { namespace model {
       }
       scitbx::af::shared<std::size_t> result;
       for (std::size_t i = 0; i < size(); ++i) {
-         if (data_[i].get_profile() == obj || data_[i].get_imageset() == obj) {
-           result.push_back(i);
-         }
+        if (data_[i].get_profile() == obj ||
+            data_[i].get_imageset() == obj ||
+            data_[i].get_scaling_model() == obj) {
+          result.push_back(i);
+        }
       }
       return result;
     }
@@ -429,7 +431,8 @@ namespace dxtbx { namespace model {
         boost::shared_ptr<Scan> scan,
         boost::shared_ptr<CrystalBase> crystal,
         boost::python::object profile,
-        boost::python::object imageset) const {
+        boost::python::object imageset,
+        boost::python::object scaling_model) const {
       scitbx::af::shared<std::size_t> result;
       for (std::size_t i = 0; i < size(); ++i) {
         if (beam && data_[i].get_beam() != beam) {
@@ -451,6 +454,9 @@ namespace dxtbx { namespace model {
           continue;
         }
         if (imageset && data_[i].get_imageset() != imageset) {
+          continue;
+        }
+        if (scaling_model && data_[i].get_scaling_model() != scaling_model){
           continue;
         }
         result.push_back(i);

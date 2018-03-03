@@ -10,6 +10,7 @@ class run(object):
       xray_structure,
       pdb_hierarchy,
       geometry_restraints_manager,
+      gradients_method="fd",
       ncs_groups=None,
       rms_bonds_limit=0.015,
       rms_angles_limit=2.0,
@@ -47,8 +48,16 @@ of individual sites.
     # randomly pick chunks
     random_chunks = []
     if(len(result)>0):
-      for i in xrange(n_ranges):
-        random_chunks.append(random.choice(xrange(len(result))))
+      if len(result) <= n_ranges:
+        # just try them all, no need to randomize
+        random_chunks = range(len(result))
+      else:
+        while len(random_chunks) <= n_ranges:
+          # Put only unique choices until got enough lenght.
+          # Could be slightly slow when len(random_chunks) slightly > n_ranges
+          rc = random.choice(xrange(len(result)))
+          if rc not in random_chunks:
+            random_chunks.append(rc)
     self.msg_strings.append("random chunks:"%random_chunks)
     # setup refinery
     xrs_dc = xray_structure.deep_copy_scatterers()
@@ -60,7 +69,8 @@ of individual sites.
       geometry_restraints_manager = grm_dc.geometry,
       real_space_gradients_delta  = real_space_gradients_delta,
       max_iterations              = max_iterations,
-      ncs_groups                  = ncs_groups)
+      ncs_groups                  = ncs_groups,
+      gradients_method            = gradients_method)
     optimal_weights = flex.double()
     # loop over chunks: determine best weight for each chunk
     if(len(result)==0):

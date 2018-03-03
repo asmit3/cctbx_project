@@ -16,6 +16,14 @@ import scitbx.rigid_body
  # NOTE: symmetry operators map NCS position i on to NCS position 0 (they are
  #  inverses of the operators mapping position 0 on to i).
 
+# Defaults for tolerances:
+# Set 2017-12-23 to match values in find_ncs.py; these are very relaxed...
+# previous values were tol_z=0.01, tol_r=.01,abs_tol_t=.10,rel_tol_t=0.001
+
+default_tol_z=0.01
+default_tol_r=0.02
+default_abs_tol_t=2.0
+default_rel_tol_t=0.05
 
 def abs(aa):
   if aa>=0:return aa
@@ -54,7 +62,11 @@ def is_identity(r,t,tol=1.e-2):
     if abs(t[i]-identity_t[i])>tol: return False
   return True
 
-def is_same_transform(r1,t1,r2,t2,tol_r=.01,abs_tol_t=.10,rel_tol_t=0.001):
+def is_same_transform(r1,t1,r2,t2,
+   tol_r=default_tol_r,
+   abs_tol_t=default_abs_tol_t,
+   rel_tol_t=default_rel_tol_t):
+
     # require everything to be very similar
     for i in xrange(9):
       if abs(r1[i]-r2[i])>tol_r: return False
@@ -141,14 +153,18 @@ def offset_inside_cell(center,unit_cell,orthogonalize=True):
     else:
       return matrix.col(offset_frac)
 
-def get_ncs_from_text(text=None,rotate_about_z=None,
+def get_ncs_from_text(text=None,text_is_ncs_spec=None,rotate_about_z=None,
     rotate_about_y=None,out=sys.stdout):
   from mmtbx.ncs.ncs import ncs
   import iotbx.pdb
   ncs_object=ncs()
-  from cctbx.array_family import flex
-  pdb_inp=iotbx.pdb.input(lines=flex.split_lines(text),source_info='string')
-  ncs_object.ncs_from_pdb_input_BIOMT(pdb_inp=pdb_inp,log=out)
+  if text_is_ncs_spec:
+    ncs_object.read_ncs(lines=text.splitlines())
+  else: # read BIOMTR
+    from cctbx.array_family import flex
+    pdb_inp=iotbx.pdb.input(lines=flex.split_lines(text),source_info='string')
+    ncs_object.ncs_from_pdb_input_BIOMT(pdb_inp=pdb_inp,log=out)
+
   if rotate_about_z:
     ncs_object.rotate_about_z(rot_deg=rotate_about_z,invert_matrices=True)
   if rotate_about_y:
@@ -384,6 +400,7 @@ class ncs_group:  # one group of NCS operators and center and where it applies
       coordinate_offset=None,
       new_unit_cell=None,
       scale_factor=None,
+      extract_point_group_symmetry=None,
       ops_to_keep=None,
       hierarchy_to_match_order=None):  # make full copy;
     # optionally apply change-of-basis operator (requires old, new unit cells)
@@ -391,10 +408,12 @@ class ncs_group:  # one group of NCS operators and center and where it applies
     # optionally sort operators to match order in hierarchy
     # optionally apply scale factor (magnification)
     # optionally keep only ops_to_keep operators
+    # optionaly extract point group symmetry
 
     # Can do only one of the above five things at most
     assert [change_of_basis_operator,scale_factor,
-      coordinate_offset,ops_to_keep,hierarchy_to_match_order].count(None)>=4
+      coordinate_offset,ops_to_keep,hierarchy_to_match_order,
+      extract_point_group_symmetry].count(None)>=4
 
     if hierarchy_to_match_order and self._chain_residue_id is not None:
       return self.deep_copy_order(
@@ -402,6 +421,9 @@ class ncs_group:  # one group of NCS operators and center and where it applies
 
     if ops_to_keep:
       return self.deep_copy_ops_to_keep(ops_to_keep=ops_to_keep)
+
+    if extract_point_group_symmetry:
+      return self.extract_point_group_symmetry()
 
     from mmtbx.ncs.ncs import ncs
     from copy import deepcopy
@@ -597,39 +619,39 @@ class ncs_group:  # one group of NCS operators and center and where it applies
     chain_residue_id=[group,residue_range_list]
     return new
 
-  def display_summary(self):
+  def display_summary(self,verbose=None):
     text=""
     text+="\nSummary of NCS group with "+str(self.n_ncs_oper())+" operators:"
     i=0
-    if self._chain_residue_id:
-      text+="\nID of chain/residue where these apply: "+\
-         str(self._chain_residue_id)
-    if self._rmsd_list and self._chain_residue_id:
-      text+="\nRMSD (A) from chain "+str(self._chain_residue_id[0][0])+':'+\
-       self.print_list(self._rmsd_list)
-    if self._residues_in_common_list and self._chain_residue_id:
-      text+="\nNumber of residues matching chain "+\
-          str(self._chain_residue_id[0][0])+':'+\
-           str(self._residues_in_common_list)
-    if self._source_of_ncs_info:
-      text+="\nSource of NCS info: "+str(self._source_of_ncs_info)
-    if self._ncs_domain_pdb:
-      text+="\nNCS domains represented by: "+str(self._ncs_domain_pdb)
-    if self._cc:
-      text+="\nCorrelation of NCS: "+str(self._cc)
-
-    for center,trans_orth,ncs_rota_matr in zip (
-       self._centers, self._translations_orth,self._rota_matrices):
-      if center is None: continue
-      i+=1
-      text+="\n\nOPERATOR "+str(i)
-      text+="\nCENTER: "+" %8.4f  %8.4f  %8.4f" %tuple(center)
-      r = ncs_rota_matr.elems
-      text+="\n\nROTA 1: "+" %8.4f  %8.4f  %8.4f" %tuple(r[0:3])
-      text+="\nROTA 2: "+" %8.4f  %8.4f  %8.4f" %tuple(r[3:6])
-      text+="\nROTA 3: "+" %8.4f  %8.4f  %8.4f" %tuple(r[6:9])
-      text+="\nTRANS:  "+" %8.4f  %8.4f  %8.4f" %tuple(trans_orth)
-    text+="\n"
+    if verbose:
+      if self._chain_residue_id:
+        text+="\nID of chain/residue where these apply: "+\
+           str(self._chain_residue_id)
+      if self._rmsd_list and self._chain_residue_id:
+        text+="\nRMSD (A) from chain "+str(self._chain_residue_id[0][0])+':'+\
+         self.print_list(self._rmsd_list)
+      if self._residues_in_common_list and self._chain_residue_id:
+        text+="\nNumber of residues matching chain "+\
+            str(self._chain_residue_id[0][0])+':'+\
+             str(self._residues_in_common_list)
+      if self._source_of_ncs_info:
+        text+="\nSource of NCS info: "+str(self._source_of_ncs_info)
+      if self._ncs_domain_pdb:
+        text+="\nNCS domains represented by: "+str(self._ncs_domain_pdb)
+      if self._cc:
+        text+="\nCorrelation of NCS: "+str(self._cc)
+      for center,trans_orth,ncs_rota_matr in zip (
+         self._centers, self._translations_orth,self._rota_matrices):
+        if center is None: continue
+        i+=1
+        text+="\n\nOPERATOR "+str(i)
+        text+="\nCENTER: "+" %8.4f  %8.4f  %8.4f" %tuple(center)
+        r = ncs_rota_matr.elems
+        text+="\n\nROTA 1: "+" %8.4f  %8.4f  %8.4f" %tuple(r[0:3])
+        text+="\nROTA 2: "+" %8.4f  %8.4f  %8.4f" %tuple(r[3:6])
+        text+="\nROTA 3: "+" %8.4f  %8.4f  %8.4f" %tuple(r[6:9])
+        text+="\nTRANS:  "+" %8.4f  %8.4f  %8.4f" %tuple(trans_orth)
+      text+="\n"
     return text
 
   def format_group_specification(self):
@@ -895,18 +917,55 @@ class ncs_group:  # one group of NCS operators and center and where it applies
       rounded=-1.*rounded
     return rounded
 
+  def extract_point_group_symmetry(self,
+   tol_r=None,
+   abs_tol_t=None,
+   rel_tol_t=None):
+    # sequentially remove operators until pg symmetry is achieved or none
+    # are left
+   ops_to_keep=[self.identity_op_id()]
+   n_ops=len(self.rota_matrices_inv())
+   for test_op in xrange(n_ops):
+     if test_op in ops_to_keep: continue
+     test_ops_to_keep=ops_to_keep+[test_op]
+     new_group=self.deep_copy(
+         ops_to_keep=test_ops_to_keep)
+     if new_group.is_point_group_symmetry(
+         tol_r=default_tol_r,
+         abs_tol_t=default_abs_tol_t,
+         rel_tol_t=default_rel_tol_t,
+         symmetry_to_match=self):  # test_op keeps us in the original set
+       ops_to_keep.append(test_op)
+   new_group=self.deep_copy(
+         ops_to_keep=ops_to_keep)
+   if new_group.is_point_group_symmetry(
+         tol_r=default_tol_r,
+         abs_tol_t=default_abs_tol_t,
+         rel_tol_t=default_rel_tol_t):
+     return new_group
+   else:
+     return None
+
   def is_point_group_symmetry(self,
-      tol_r=.01,abs_tol_t=.10,rel_tol_t=0.001):
+   tol_r=default_tol_r,
+   abs_tol_t=default_abs_tol_t,
+   rel_tol_t=default_rel_tol_t,
+   symmetry_to_match=None):
     # return True if any 2 sequential operations is a member of the
     #  set.  Test by sequentially applying all pairs of
     # operators and verifying that the result is a member of the set
+
+    # Allow checking self operators vs some other symmetry object if desired:
+    if symmetry_to_match is None:
+      symmetry_to_match=self
 
     for r,t in zip(self.rota_matrices_inv(),self.translations_orth_inv()):
       for r1,t1 in zip(self.rota_matrices_inv(),self.translations_orth_inv()):
         new_r = r1 * r
         new_t = (r1 * t) + t1
         is_similar=False
-        for r2,t2 in zip(self.rota_matrices_inv(),self.translations_orth_inv()):
+        for r2,t2 in zip(symmetry_to_match.rota_matrices_inv(),
+           symmetry_to_match.translations_orth_inv()):
           if is_same_transform(new_r,new_t,r2,t2,tol_r=tol_r,
             abs_tol_t=abs_tol_t,rel_tol_t=rel_tol_t):
             is_similar=True
@@ -946,7 +1005,7 @@ class ncs_group:  # one group of NCS operators and center and where it applies
         if delta is None:
           delta=delta_z
         elif abs(delta-delta_z)>tol_z:
-          is_helical=False
+          is_helical=False # XX not used
       sorted_indices.append(i1)
       sorted_z.append(z)
     if n_minus_one>n_plus_one:
@@ -960,11 +1019,31 @@ class ncs_group:  # one group of NCS operators and center and where it applies
       self._rota_matrices[i2]=rota_matrices_sav[i1]
       self._translations_orth[i2]=translations_orth_sav[i1]
     self.delete_inv() # remove the inv matrices/rotations so they regenerate
+    if len(self._rota_matrices)<2:
+      self._helix_theta=None
+    else:
+      self._helix_theta=self.get_theta_along_z(
+        self._rota_matrices[0],self._rota_matrices[1])
     self.get_inverses()
     return sorted_indices
 
+  def get_trans_along_z(self,t0,t1):
+    return t1[2]-t0[2]
+
+  def get_theta_along_z(self,m0,m1):
+    import math
+    cost=m0[0]
+    sint=m0[1]
+    t0=180.*math.atan2(sint,cost)/3.14159
+    cost=m1[0]
+    sint=m1[1]
+    t1=180.*math.atan2(sint,cost)/3.14159
+    return t1 - t0
+
   def is_helical_along_z(self,tol_z=0.01,
-     tol_r=.01,abs_tol_t=.10,rel_tol_t=0.001):
+   tol_r=default_tol_r,
+   abs_tol_t=default_abs_tol_t,
+   rel_tol_t=default_rel_tol_t):
     # This assumes the operators are in order, but allow special case
     #   where the identity operator is placed at the beginning but belongs
     #   at the end
@@ -1062,7 +1141,15 @@ class ncs_group:  # one group of NCS operators and center and where it applies
     raise Sorry(
      "Unable to find forward and reverse operators for this helical symmetry")
 
-  def extend_helix_operators(self,z_range=None,tol_z=0.01,
+  def get_helix_parameters(self,tol_z=default_tol_z):
+    from libtbx import group_args
+    helix_z_translation=self.get_helix_z_translation()
+    helix_theta=self.get_helix_theta()
+    if helix_z_translation is not None and helix_theta is not None:
+      return group_args(helix_z_translation=helix_z_translation,
+        helix_theta=helix_theta)
+
+  def extend_helix_operators(self,z_range=None,tol_z=default_tol_z,
       max_operators=None):
     assert self._have_helical_symmetry
     # extend the operators to go from -z_range to z_range
@@ -1176,6 +1263,12 @@ class ncs_group:  # one group of NCS operators and center and where it applies
     assert self._have_helical_symmetry
     if hasattr(self,'_helix_z_translation'):
       return self._helix_z_translation
+    return None
+
+  def get_helix_theta(self):
+    assert self._have_helical_symmetry
+    if hasattr(self,'_helix_theta'):
+      return self._helix_theta
     return None
 
   def helix_rt_reverse(self):
@@ -1302,6 +1395,7 @@ class ncs:
       scale_factor=None,
       new_unit_cell=None,
       ops_to_keep=None,
+      extract_point_group_symmetry=None,
       hierarchy_to_match_order=None):  # make a copy
     from mmtbx.ncs.ncs import ncs
 
@@ -1317,6 +1411,7 @@ class ncs:
          scale_factor=scale_factor,
          unit_cell=unit_cell,new_unit_cell=new_unit_cell,
          ops_to_keep=ops_to_keep,
+         extract_point_group_symmetry=extract_point_group_symmetry,
          hierarchy_to_match_order=hierarchy_to_match_order)
 
       new._ncs_groups.append(new_group)
@@ -1406,6 +1501,11 @@ class ncs:
 
     self._ncs_read=True
 
+
+  def select_first_ncs_group(self):
+    # just keep the first ncs group and remove others:
+    self._ncs_groups=self._ncs_groups[:1]
+    return self
 
   def set_unit_ncs(self):  # just make a single ncs operator
 
@@ -1665,7 +1765,7 @@ class ncs:
      self.init_ncs_group()
 
 
-  def display_all (self,log=None):
+  def display_all (self,verbose=True,log=None):
     if log==None:
       log=sys.stdout
     count=0
@@ -1673,7 +1773,7 @@ class ncs:
     for ncs_group in self._ncs_groups:
       count+=1
       text+="\n\nGROUP "+str(count)
-      text+=ncs_group.display_summary()
+      text+=ncs_group.display_summary(verbose=verbose)
     text+="\n\n"
     log.write(text)
     return text
@@ -1829,7 +1929,10 @@ class ncs:
         n_max=ncs_group.n_ncs_oper()
     return n_max
 
-  def is_point_group_symmetry(self,tol_r=.01,abs_tol_t=.10,rel_tol_t=0.001):
+  def is_point_group_symmetry(self,
+   tol_r=default_tol_r,
+   abs_tol_t=default_abs_tol_t,
+   rel_tol_t=default_rel_tol_t):
     if not self._ncs_groups:
       return False
     for ncs_group in self._ncs_groups[:1]:
@@ -1857,13 +1960,13 @@ class ncs:
     for ncs_group in self._ncs_groups:
       ncs_group.invert_matrices()
 
-  def sort_by_z_translation(self,tol_z=0.01):
+  def sort_by_z_translation(self,tol_z=default_tol_z):
     if not self._ncs_groups:
       return
     for ncs_group in self._ncs_groups:
       ncs_group.sort_by_z_translation(tol_z=tol_z)
 
-  def extend_helix_operators(self,z_range=None,tol_z=0.01,
+  def extend_helix_operators(self,z_range=None,tol_z=default_tol_z,
       max_operators=None):
     if not self._ncs_groups:
       return
@@ -1871,7 +1974,17 @@ class ncs:
       ncs_group.extend_helix_operators(z_range=z_range,tol_z=tol_z,
         max_operators=max_operators)
 
-  def is_helical_along_z(self,tol_r=.01,abs_tol_t=.10,rel_tol_t=0.001):
+  def get_helix_parameters(self,z_range=None,tol_z=default_tol_z,
+      max_operators=None):
+    if not self._ncs_groups:
+      return
+    # return values for group 0
+    return self._ncs_groups[0].get_helix_parameters(tol_z=tol_z,)
+
+  def is_helical_along_z(self,
+   tol_r=default_tol_r,
+   abs_tol_t=default_abs_tol_t,
+   rel_tol_t=default_rel_tol_t):
     if not self._ncs_groups:
       return False
     for ncs_group in self._ncs_groups:

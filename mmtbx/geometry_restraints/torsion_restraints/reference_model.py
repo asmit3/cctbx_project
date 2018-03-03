@@ -260,7 +260,15 @@ class reference_model(object):
     m_sel = m_cache.selection(model_selection_str)
     ref_sel = ref_cache.selection(ref_selection_str)
     combined_h = model_h.select(m_sel).deep_copy()
+    if combined_h.atoms_size() == 0:
+      msg = "Selection '%s' selected 0 atoms in refined model.\n" % (model_selection_str) +\
+          "Please check if the selection provided is correct."
+      raise Sorry(msg)
     ref_h = ref_h.select(ref_sel).deep_copy()
+    if ref_h.atoms_size() == 0:
+      msg = "Reference selection '%s' selected 0 atoms in %s.\n" % (ref_selection_str, fn) +\
+          "Please check if the selection provided is correct."
+      raise Sorry(msg)
     for chain in ref_h.only_model().chains():
       chain.id +="ref"
     combined_h.transfer_chains_from_other(ref_h)
@@ -268,18 +276,13 @@ class reference_model(object):
     temp_h = combined_h.deep_copy()
     temp_h.atoms().reset_i_seq()
 
-    search_options = self.params.search_options
     # combined_h.write_pdb_file(fn+"_combined.pdb")
     ncs_obj = iotbx.ncs.input(
         hierarchy=temp_h,
-        residue_match_radius=search_options.residue_match_radius,
-        chain_similarity_threshold=search_options.chain_similarity_threshold,
-        chain_max_rmsd=search_options.chain_max_rmsd,
-        )
+        params = self.params.search_options)
     # For each found NCS group we going to do matching procedure between
     # copies
-    for group_list in ncs_obj.get_ncs_restraints_group_list(
-        raise_sorry=False):
+    for group_list in ncs_obj.get_ncs_restraints_group_list():
       # combine selections from master and copies into one list...
       n_total_selections = len(group_list.copies) + 1
       ncs_iselections = [group_list.master_iselection]

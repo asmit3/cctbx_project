@@ -1,7 +1,7 @@
 #ifndef CCTBX_MAPTBX_TARGET_AND_GRADIENTS_H
 #define CCTBX_MAPTBX_TARGET_AND_GRADIENTS_H
 
-#include <cctbx/maptbx/eight_point_interpolation.h>
+#include <cctbx/maptbx/interpolation.h>
 
 namespace cctbx {
   namespace maptbx {
@@ -86,47 +86,11 @@ namespace cctbx {
     namespace target_and_gradients {
       namespace simple {
 
-/* DISABLED UNTILL eight_point_interpolation_with_gradients WORKS.
-
 template <typename FloatType=double>
 class compute
 {
 public:
-  compute(
-    uctbx::unit_cell const& unit_cell,
-    af::const_ref<FloatType, af::c_grid_padded<3> > const& map_data,
-    af::const_ref<scitbx::vec3<FloatType> > const& sites_cart)
-  {
-    gradients_.resize(sites_cart.size(), scitbx::vec3<FloatType>(0,0,0));
-    af::c_grid_padded<3> a = map_data.accessor();
-    scitbx::vec3<FloatType> step;
-    for(unsigned i=0;i<3;i++) {
-      step[i] = unit_cell.parameters()[i] / a.all()[i];
-    }
-    target_ = 0;
-    for(std::size_t i_site=0;i_site<sites_cart.size();i_site++) {
-      af::tiny<FloatType, 4> result = eight_point_interpolation_with_gradients(
-        map_data,
-        unit_cell.fractionalize(sites_cart[i_site]),
-        step);
-      target_ += result[0];
-      gradients_[i_site]=scitbx::vec3<FloatType>(
-        result[1],result[2],result[3]);
-    }
-  }
 
-  FloatType target_;
-  af::shared<scitbx::vec3<FloatType> > gradients_;
-
-  FloatType target() { return target_; }
-  af::shared<scitbx::vec3<FloatType> > gradients() { return gradients_; }
-};
-*/
-
-template <typename FloatType=double>
-class compute
-{
-public:
   compute(
     uctbx::unit_cell const& unit_cell,
     af::const_ref<FloatType, af::c_grid_padded<3> > const& map_data,
@@ -142,7 +106,6 @@ public:
         target_ += eight_point_interpolation(
           map_data,
           unit_cell.fractionalize(sites_cart[i_site]));
-        //
         scitbx::vec3<FloatType> piv = sites_cart[i_site];
         scitbx::vec3<FloatType> piv_d = piv;
         for(unsigned i_axis=0;i_axis<3;i_axis++) {
@@ -157,9 +120,51 @@ public:
           piv_d[i_axis] = piv[i_axis];
           (*res)[i_axis] = (densities[0] - densities[1]) / (2 * delta);
         }
-        //
+      }
+    }
+  }
 
-
+  compute(
+    uctbx::unit_cell const& unit_cell,
+    af::const_ref<FloatType, af::c_grid_padded<3> > const& map_data,
+    af::const_ref<scitbx::vec3<FloatType> > const& sites_cart,
+    af::const_ref<bool> const& selection,
+    std::string const& interpolation)
+  {
+    gradients_.resize(sites_cart.size(), scitbx::vec3<FloatType>(0,0,0));
+    af::c_grid_padded<3> a = map_data.accessor();
+    scitbx::vec3<FloatType> step;
+    for(unsigned i=0;i<3;i++) {
+      step[i] = unit_cell.parameters()[i] / a.all()[i];
+    }
+    target_ = 0;
+    for(std::size_t i_site=0;i_site<sites_cart.size();i_site++) {
+      if(selection[i_site]) {
+        af::tiny<FloatType, 4> result;
+        if(interpolation == "linear") {
+          result = eight_point_interpolation_with_gradients(
+            map_data,
+            unit_cell.fractionalize(sites_cart[i_site]),
+            step);
+        }
+        else if(interpolation=="quadratic") {
+          result = quadratic_interpolation_with_gradients(
+            map_data,
+            unit_cell.fractionalize(sites_cart[i_site]),
+            step);
+        }
+        else if(interpolation=="tricubic") {
+          result = tricubic_interpolation_with_gradients(
+            map_data,
+            unit_cell.fractionalize(sites_cart[i_site]),
+            step);
+        }
+        else {
+          throw std::runtime_error("Unknown interpolation mode.");
+        }
+        target_ += result[0];
+        gradients_[i_site]=scitbx::vec3<FloatType>(
+          result[1],result[2],result[3]);
       }
     }
   }
@@ -170,7 +175,6 @@ public:
   FloatType target() { return target_; }
   af::shared<scitbx::vec3<FloatType> > gradients() { return gradients_; }
 };
-
 
 
 template <

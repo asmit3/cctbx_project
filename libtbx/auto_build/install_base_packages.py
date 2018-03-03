@@ -69,6 +69,8 @@ class installer (object) :
       help="Use the system Python interpreter", action="store_true")
     parser.add_option("--python3", dest="python3", action="store_true", default=False,
       help="Install a Python3 interpreter. This is unsupported and purely for development purposes.")
+    parser.add_option("--mpi-build", dest="mpi_build", action="store_true", default=False,
+      help="Installs software with MPI functionality")
     parser.add_option("-g", "--debug", dest="debug", action="store_true",
       help="Build in debugging mode", default=False)
     # Package set options.
@@ -319,6 +321,10 @@ class installer (object) :
     if 'pillow' in packages:
       packages += ['freetype']
 
+    # mpi4py installation
+    if options.mpi_build:
+      packages +=['mpi4py']
+
     return set(packages)
 
   def call (self, args, log=None, **kwargs) :
@@ -394,7 +400,7 @@ class installer (object) :
         '-c',
         'import sys; print("%d:%d:%d:%s" % (sys.version_info[0], sys.version_info[1], sys.hexversion, sys.version))',
         ])
-    except (OSError, RuntimeError), e:
+    except (OSError, RuntimeError):
       print >> self.log, """
 Error: Could not determine version of Python installed at:
   %s
@@ -440,7 +446,7 @@ Found Python version:
     print >> self.log,  "Checking for write permissions:", site_packages
     try:
       f = tempfile.TemporaryFile(dir=site_packages)
-    except (OSError, RuntimeError), e:
+    except (OSError, RuntimeError):
       print >> self.log, """
 Error: You don't appear to have write access to
 the Python site-packages directory:
@@ -665,10 +671,10 @@ Installation of Python packages may fail.
         try:
           check_output(compiler)
           found.append(compiler)
-        except RuntimeError, e:
+        except RuntimeError:
           # Found compiler, but error like "no input files"
           found.append(compiler)
-        except OSError, e:
+        except OSError:
           # Command not found
           pass
       if not found:
@@ -697,6 +703,7 @@ Installation of Python packages may fail.
       'ipython',
       'pyopengl',
       'scipy',
+      'mpi4py',
       'py2app',
       'misc',
       'lz4_plugin',
@@ -850,7 +857,7 @@ def _replace_sysconfig_paths(d):
 _replace_sysconfig_paths(build_time_vars)
 """ % self.base_dir)
         fh.close()
-    except Exception, e:
+    except Exception as e:
       print >> log, "Could not make python relocatable:"
       print >> log, e
 
@@ -1064,6 +1071,12 @@ _replace_sysconfig_paths(build_time_vars)
       pkg_name=SCIPY_PKG,
       pkg_name_label="SciPy",
       confirm_import_module="scipy")
+
+  def build_mpi4py(self):
+    self.build_python_module_pip(
+      package_name='mpi4py',
+      package_version=MPI4PY_VERSION,
+      confirm_import_module="mpi4py")
 
   def build_py2app(self):
     self.build_python_module_simple(

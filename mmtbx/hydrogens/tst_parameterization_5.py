@@ -8,7 +8,7 @@ import iotbx.pdb
 # These examples are from pdb and initially failed
 #-----------------------------------------------------------------------------
 
-def exercise():
+def exercise(pdb_str, type_list_known):
   pdb_inp = iotbx.pdb.input(lines=pdb_str.split("\n"), source_info=None)
   model = mmtbx.model.manager(
     model_input = pdb_inp,
@@ -32,8 +32,6 @@ def exercise():
   number_h = model.get_hd_selection().count(True)
   number_h_para = len(h_para) - h_para.count(None)
 
-# There are 68 H atoms in the pdb_string, check if all of them are recognized
-# Note: one H atom (VAL 7 HA) is bound to two CA atoms at once
   assert (number_h_para == number_h), 'Not all H atoms are parameterized'
 
   for ih in h_distances:
@@ -47,8 +45,9 @@ def exercise():
     #print "'%s'," % type1,
 
 # Several fragments from pdb with double conformations which caused crashes
-# and which should now be mended
-pdb_str = """\
+# There are 68 H atoms in the pdb_string, check if all of them are recognized
+# Note: one H atom (VAL 7 HA) is bound to two CA atoms at once
+pdb_str1 = """\
 CRYST1   27.832   30.931   25.475  90.00  90.00  90.00 P 1
 SCALE1      0.035930  0.000000  0.000000        0.00000
 SCALE2      0.000000  0.032330  0.000000        0.00000
@@ -288,17 +287,7 @@ TER
 END
 """
 
-
-#type_list_known = ['2tetra', '2tetra', 'alg1b', '3neigbs', '2tetra',
-#  'flat_2neigbs', 'flat_2neigbs', 'flat_2neigbs', '3neigbs', 'alg1b', '3neigbs',
-#  'alg1b', '2tetra', '2tetra', '2tetra', '2tetra', 'flat_2neigbs',
-#  'flat_2neigbs', '2tetra', '2tetra', 'alg1b', 'alg1b', 'alg1b', '3neigbs',
-#  '2tetra', '2tetra', '3neigbs', '2tetra', '2tetra', 'flat_2neigbs', '2tetra',
-#  'alg1b', '3neigbs', '2tetra', '2tetra', 'alg1b', '2tetra', '2tetra', 'alg1b',
-#  '2tetra', '2tetra', 'alg1b', '3neigbs', '3neigbs', 'prop', 'prop', 'prop',
-#  'prop', 'prop', 'prop', 'prop', '3neigbs', 'prop']
-
-type_list_known = ['2tetra', '2tetra', 'alg1b', '3neigbs', '3neigbs',
+type_list_known1 = ['2tetra', '2tetra', 'alg1b', '3neigbs', '3neigbs',
   '3neigbs', 'alg1b', '2tetra', '2tetra', '2tetra', '2tetra', 'alg1b',
   '3neigbs', '2tetra', '2tetra', '3neigbs', '2tetra', '2tetra', 'flat_2neigbs',
   'alg1b', '3neigbs', '2tetra', '2tetra', 'alg1b', '2tetra', '2tetra', 'alg1b',
@@ -309,7 +298,119 @@ type_list_known = ['2tetra', '2tetra', 'alg1b', '3neigbs', '3neigbs',
   'flat_2neigbs', 'flat_2neigbs', 'alg1b', '2tetra', '2tetra', 'flat_2neigbs',
   'flat_2neigbs', 'flat_2neigbs', 'flat_2neigbs', 'alg1b']
 
+pdb_str2 = """
+CRYST1   13.142   13.841   12.524  90.00  90.00  90.00 P 1
+SCALE1      0.076092  0.000000  0.000000        0.00000
+SCALE2      0.000000  0.072249  0.000000        0.00000
+SCALE3      0.000000  0.000000  0.079847        0.00000
+ATOM    285  CB  ALA A  25      21.105  -3.928  25.422  1.00 11.78           C
+ATOM    286  N  AALA A  25      18.694  -4.221  25.276  0.50  9.87           N
+ATOM    287  CA AALA A  25      19.812  -3.247  25.214  0.50 10.86           C
+ATOM    288  C  AALA A  25      19.902  -2.496  23.898  0.50  9.98           C
+ATOM    289  O  AALA A  25      20.720  -1.565  23.768  0.50  7.99           O
+ATOM    290  H  AALA A  25      18.945  -5.044  25.293  0.50 10.06           H
+ATOM    291  HA AALA A  25      19.625  -2.606  25.918  0.50 11.03           H
+ATOM    292  HB1AALA A  25      21.824  -3.278  25.378  0.50 11.78           H
+ATOM    293  HB2AALA A  25      21.109  -4.356  26.292  0.50 11.78           H
+ATOM    294  HB3AALA A  25      21.233  -4.598  24.732  0.50 11.78           H
+ATOM    295  N  BALA A  25      18.682  -4.224  25.328  0.50 10.05           N
+ATOM    296  CA BALA A  25      19.756  -3.242  25.276  0.50 11.02           C
+ATOM    297  C  BALA A  25      19.678  -2.389  23.992  0.50  9.97           C
+ATOM    298  O  BALA A  25      20.024  -1.203  24.029  0.50 11.29           O
+ATOM    299  H  BALA A  25      18.941  -5.043  25.374  0.50 10.06           H
+ATOM    300  HA BALA A  25      19.650  -2.631  26.022  0.50 11.03           H
+ATOM    301  HB1BALA A  25      21.811  -3.264  25.386  0.50 11.78           H
+ATOM    302  HB2BALA A  25      21.142  -4.393  26.273  0.50 11.78           H
+ATOM    303  HB3BALA A  25      21.224  -4.566  24.701  0.50 11.78           H
+"""
+
+type_list_known2 = ['alg1b', '3neigbs', 'prop', 'prop', 'prop', 'alg1b',
+  '3neigbs', 'prop', 'prop', 'prop']
+
+
+# This fragment is from PDB model 1qjh
+# A residue (Arg 71 in 1qjh) is close to its symmetry mate.
+# The geo file lists two asu bond restraints for atom HH22 (there should be
+# only one, IMHO!).
+# The fact that HH22 has no simple bond proxy, but angle proxies, caused
+# an error (asu covalent bond restraints are currently ignored).
+
+pdb_str3 = """
+CRYST1   49.701   49.701   73.255  90.00  90.00  90.00 P 42 21 2     8
+ORIGX1      1.000000  0.000000  0.000000        0.00000
+ORIGX2      0.000000  1.000000  0.000000        0.00000
+ORIGX3      0.000000  0.000000  1.000000        0.00000
+SCALE1      0.020120  0.000000  0.000000        0.00000
+SCALE2      0.000000  0.020120  0.000000        0.00000
+SCALE3      0.000000  0.000000  0.013651        0.00000
+ATOM    575  N   ARG A  71       4.405  19.140  21.765  1.00 56.18           N
+ATOM    576  CA  ARG A  71       4.384  20.597  21.643  1.00 50.81           C
+ATOM    577  C   ARG A  71       5.782  21.217  21.647  1.00 45.46           C
+ATOM    578  O   ARG A  71       5.933  22.440  21.582  1.00 46.55           O
+ATOM    579  CB  ARG A  71       3.558  21.214  22.773  1.00 51.01           C
+ATOM    580  CG  ARG A  71       2.166  20.635  22.956  1.00 52.13           C
+ATOM    581  CD  ARG A  71       1.358  20.625  21.661  1.00 60.92           C
+ATOM    582  NE  ARG A  71       1.134  21.965  21.122  1.00 63.41           N
+ATOM    583  CZ  ARG A  71       0.470  22.927  21.755  1.00 62.11           C
+ATOM    584  NH1 ARG A  71      -0.038  22.699  22.955  1.00 60.26           N
+ATOM    585  NH2 ARG A  71       0.310  24.119  21.188  1.00 62.26           N
+ATOM      0  H   ARG A  71       4.587  18.847  22.553  1.00 56.18           H
+ATOM      0  HA  ARG A  71       3.979  20.793  20.783  1.00 50.81           H
+ATOM      0  HB2 ARG A  71       4.047  21.109  23.604  1.00 51.01           H
+ATOM      0  HB3 ARG A  71       3.476  22.167  22.610  1.00 51.01           H
+ATOM      0  HG2 ARG A  71       2.238  19.729  23.295  1.00 52.13           H
+ATOM      0  HG3 ARG A  71       1.690  21.151  23.626  1.00 52.13           H
+ATOM      0  HD2 ARG A  71       1.822  20.088  20.999  1.00 60.92           H
+ATOM      0  HD3 ARG A  71       0.502  20.199  21.822  1.00 60.92           H
+ATOM      0  HE  ARG A  71       1.453  22.143  20.343  1.00 63.41           H
+ATOM      0 HH11 ARG A  71       0.062  21.929  23.325  1.00 60.26           H
+ATOM      0 HH12 ARG A  71      -0.468  23.321  23.365  1.00 60.26           H
+ATOM      0 HH21 ARG A  71       0.637  24.271  20.407  1.00 62.26           H
+ATOM      0 HH22 ARG A  71      -0.120  24.738  21.602  1.00 62.26           H
+"""
+
+type_list_known3 = ['alg1b', '3neigbs', '2tetra', '2tetra', '2tetra', '2tetra',
+ '2tetra', '2tetra', 'flat_2neigbs', 'alg1a', 'alg1a']
+
+def exercise3(pdb_str, type_list_known):
+  pdb_inp = iotbx.pdb.input(lines=pdb_str.split("\n"), source_info=None)
+  model = mmtbx.model.manager(
+    model_input = pdb_inp,
+    build_grm   = True)
+
+  pdb_hierarchy = model.get_hierarchy()
+  sites_cart = model.get_sites_cart()
+  atoms = pdb_hierarchy.atoms()
+
+  model.setup_riding_h_manager()
+  riding_h_manager = model.get_riding_h_manager()
+
+  h_para = riding_h_manager.h_parameterization
+
+  diagnostics = riding_h_manager.diagnostics(
+    sites_cart = sites_cart,
+    threshold  = 0.05)
+  h_distances   = diagnostics.h_distances
+  type_list     = diagnostics.type_list
+
+  number_h = model.get_hd_selection().count(True)
+  number_h_para = len(h_para) - h_para.count(None)
+
+  assert (number_h_para == number_h-2), 'Not all H atoms are parameterized'
+
+  for ih in h_distances:
+    labels = atoms[ih].fetch_labels()
+    assert (h_distances[ih] < 0.2), \
+      'distance too large: %s  atom: %s (%s) residue: %s ' \
+      % (h_para[ih].htype, atoms[ih].name, ih, labels.resseq.strip())
+
+  for type1, type2 in zip(type_list, type_list_known):
+    assert (type1 == type2)
+
 if (__name__ == "__main__"):
   t0 = time.time()
-  exercise()
+  exercise(pdb_str = pdb_str1, type_list_known = type_list_known1)
+  exercise(pdb_str = pdb_str2, type_list_known = type_list_known2)
+  exercise3(pdb_str = pdb_str3, type_list_known = type_list_known3)
+
   print "OK. Time: %8.3f"%(time.time()-t0)

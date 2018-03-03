@@ -14,6 +14,7 @@
 #include <iostream>
 #include <cmath>
 #include <scitbx/vec3.h>
+#include <scitbx/array_family/shared.h>
 #include <scitbx/array_family/simple_io.h>
 #include <scitbx/array_family/simple_tiny_io.h>
 #include <dxtbx/error.h>
@@ -68,7 +69,17 @@ namespace dxtbx { namespace model {
     virtual double get_flux() const = 0;
     // Get the transmission
     virtual double get_transmission() const = 0;
-    // Check wavlength and direction are (almost) same
+    // @returns the number of scan points
+    virtual std::size_t get_num_scan_points() const = 0;
+    // Set the s0 vector at scan points
+    virtual void set_s0_at_scan_points(const scitbx::af::const_ref< vec3<double> > &s0) = 0;
+    // Get the s0 vector at scan points
+    virtual scitbx::af::shared< vec3<double> > get_s0_at_scan_points() const = 0;
+    // Get the s0 vector at the scan point
+    virtual vec3<double> get_s0_at_scan_point(std::size_t index) const = 0;
+    // Reset the scan points
+    virtual void reset_scan_points() = 0;
+    // Check wavelength and direction are (almost) same
     virtual bool operator==(const BeamBase &rhs) const = 0;
     // Check if two models are similar
     virtual bool is_similar_to(
@@ -299,9 +310,65 @@ namespace dxtbx { namespace model {
       return transmission_;
     }
 
-    /** Check wavlength and direction are (almost) same */
+    /**
+     * @returns the number of scan points
+     */
+    std::size_t get_num_scan_points() const {
+      return s0_at_scan_points_.size();
+    }
+
+    /**
+     * Set the s0 vector at scan points
+     */
+    void set_s0_at_scan_points(const scitbx::af::const_ref< vec3<double> > &s0) {
+      s0_at_scan_points_ = scitbx::af::shared< vec3<double> >(s0.begin(), s0.end());
+    }
+
+    /**
+     * Get the s0 vector at scan points
+     */
+    scitbx::af::shared< vec3<double> > get_s0_at_scan_points() const {
+      return s0_at_scan_points_;
+    }
+
+    /**
+     * Get the s0 vector at the scan point
+     */
+    vec3<double> get_s0_at_scan_point(std::size_t index) const {
+      DXTBX_ASSERT(index < s0_at_scan_points_.size());
+      return s0_at_scan_points_[index];
+    }
+
+    /**
+     * Reset the scan points
+     */
+    void reset_scan_points() {
+      s0_at_scan_points_.clear();
+    }
+
+    /** Check two beam models are (almost) the same */
     bool operator==(const BeamBase &rhs) const {
       double eps = 1.0e-6;
+
+      // scan-varying model checks
+      if (get_num_scan_points() > 0) {
+        if (get_num_scan_points() != rhs.get_num_scan_points()) {
+          return false;
+        }
+        for (std::size_t j = 0; j < get_num_scan_points(); ++j) {
+          vec3<double> this_s0 = get_s0_at_scan_point(j);
+          vec3<double> other_s0 = rhs.get_s0_at_scan_point(j);
+          double d_s0 = 0.0;
+          for (std::size_t i = 0; i < 3; ++i) {
+            d_s0 += std::abs(this_s0[i] - other_s0[i]);
+          }
+          if (d_s0 > eps) {
+            return false;
+          }
+        }
+      }
+
+      // static model checks
       return std::abs(angle_safe(direction_, rhs.get_direction())) <= eps
           && std::abs(wavelength_ - rhs.get_wavelength()) <= eps
           && std::abs(divergence_ - rhs.get_divergence()) <= eps
@@ -319,13 +386,36 @@ namespace dxtbx { namespace model {
         double direction_tolerance,
         double polarization_normal_tolerance,
         double polarization_fraction_tolerance) const {
+
+      // scan varying model checks
+      if (get_num_scan_points() != rhs.get_num_scan_points()) {
+        return false;
+      }
+      for (std::size_t i = 0; i < get_num_scan_points(); ++i) {
+        vec3<double> s0_a = get_s0_at_scan_point(i);
+        vec3<double> s0_b = rhs.get_s0_at_scan_point(i);
+
+        vec3<double> us0_a = s0_a.normalize();
+        vec3<double> us0_b = s0_b.normalize();
+        if (std::abs(angle_safe(us0_a, us0_b)) > direction_tolerance) {
+          return false;
+        }
+
+        double wavelength_a = 1.0 / s0_a.length();
+        double wavelength_b = 1.0 / s0_b.length();
+        if (std::abs(wavelength_a - wavelength_b) > wavelength_tolerance) {
+          return false;
+        }
+      }
+
+      // static model checks
       return std::abs(angle_safe(direction_, rhs.get_direction())) <= direction_tolerance
           && std::abs(wavelength_ - rhs.get_wavelength()) <= wavelength_tolerance
           && std::abs(angle_safe(polarization_normal_, rhs.get_polarization_normal())) <= polarization_normal_tolerance
           && std::abs(polarization_fraction_ - rhs.get_polarization_fraction()) <= polarization_fraction_tolerance;
     }
 
-    /** Check wavelength and direction are not (almost) equal. */
+    /** Check two beam models are not (almost) the same. */
     bool operator!=(const BeamBase &rhs) const {
       return !(*this == rhs);
     }
@@ -350,6 +440,7 @@ namespace dxtbx { namespace model {
     double polarization_fraction_;
     double flux_;
     double transmission_;
+    scitbx::af::shared< vec3<double> > s0_at_scan_points_;
   };
 
   /** Print beam information */

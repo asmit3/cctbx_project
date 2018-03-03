@@ -1,15 +1,10 @@
 from __future__ import division
 from scitbx.array_family import flex
-from scitbx.math import superpose
-from libtbx.utils import Sorry
 from scitbx import matrix
 import scitbx.rigid_body
 from cctbx import xray
-import string
 import random
 import math
-import sys
-from copy import deepcopy
 import mmtbx.monomer_library.server
 from mmtbx.refinement.flip_peptide_side_chain import should_be_flipped, \
     flip_residue
@@ -19,6 +14,9 @@ __author__ = 'Youval, massively rewritten by Oleg'
 
 def flip_atoms_in_ncs_groups(hierarchy, ncs_restraints_group_list, mon_lib_srv=None):
   """
+  XXX
+  XXX not used, only tested. May have some value.
+  XXX
   This function will actually modify hierarchy by making necessary flips
   in ncs-related residues. Flip will be made by exchanging atom coordinates.
   Will make all copies consistent with master.
@@ -36,116 +34,6 @@ def flip_atoms_in_ncs_groups(hierarchy, ncs_restraints_group_list, mon_lib_srv=N
           # print "working on ", r_m.id_str(), r_c.id_str()
           if should_be_flipped(r_m, r_c):
             flip_residue(r_c, mon_lib_srv)
-
-
-def concatenate_rot_tran(transforms_obj=None,
-                         ncs_restraints_group_list=None):
-  """
-  Concatenate rotation angles, corresponding to the rotation
-  matrices and scaled translation vectors to a single long flex.double object
-
-  Args:
-    transforms_obj : (mmtbx.refinement.minimization_ncs_constraints
-      ncs_group_object) containing information on Rotation matrices (lists of
-      objects matrix.rec) and Translation vectors (lists of objects matrix.rec)
-    ncs_restraints_group_list : a list of ncs_restraint_group objects
-
-  Returns:
-    flex.double : [(alpha_1,beta_1,gamma_1,Tx_1,Ty_1,Tz_1)...]
-  """
-  x = []
-  if (not ncs_restraints_group_list) and transforms_obj:
-    ncs_restraints_group_list = transforms_obj.get_ncs_restraints_group_list()
-  if ncs_restraints_group_list:
-    for gr in ncs_restraints_group_list:
-      for tr in gr.copies:
-        x.extend(list(rotation_to_angles(rotation=tr.r.elems))
-                 + list(tr.t.elems))
-  return flex.double(x)
-
-def get_rotation_translation_as_list(transforms_obj=None,
-                                     ncs_restraints_group_list=None):
-  """
-  Get rotations and translations vectors from ncs_restraints_group_list or
-  transforms_obj
-
-  Returns:
-    r (list): list of rotation matrices
-    t (list): list of translation vectors
-  """
-  r = []
-  t = []
-  if (not ncs_restraints_group_list) and transforms_obj:
-    ncs_restraints_group_list = transforms_obj.get_ncs_restraints_group_list()
-  if ncs_restraints_group_list:
-    for nrg in ncs_restraints_group_list:
-      for tr in nrg.copies:
-        r.append(tr.r)
-        t.append(tr.t)
-  return r,t
-
-def update_transforms(transforms_obj,rm,tv):
-  """ Update transforms_obj with the rotation matrices (rm) and translation
-  vectors (tv) """
-  assert len(transforms_obj.transform_order) == len(rm)
-  assert len(rm) == len(tv)
-  for tr,r,t in zip(transforms_obj.transform_order,rm,tv):
-    transforms_obj.ncs_transform[tr].r = r
-    transforms_obj.ncs_transform[tr].t = t
-  return transforms_obj
-
-def update_ncs_restraints_group_list(ncs_restraints_group_list,rm,tv):
-  """ Update ncs_restraints_group_list with the rotation matrices (rm) and
-  translation vectors (tv) """
-  assert len(rm) == len(tv)
-  new_list = []
-  for gr in ncs_restraints_group_list:
-    for tr in gr.copies:
-      tr.r = rm.pop(0)
-      tr.t = tv.pop(0)
-    new_list.append(gr)
-  return new_list
-
-def update_rot_tran(x,transforms_obj=None,ncs_restraints_group_list=None):
-  """
-  Convert the refinable parameters, rotations angles and
-  scaled translations, back to rotation matrices and translation vectors and
-  updates the transforms_obj (ncs_restraints_group_list)
-
-  Args:
-    x : a flex.double of the form (theta_1,psi_1,phi_1,tx_1,ty_1,tz_1,..
-      theta_n,psi_n,phi_n,tx_n/s,ty_n/s,tz_n/s). where n is the number of
-      transformations.
-    transforms_obj : (ncs_group_object) containing information on Rotation
-      matrices, Translation vectors and NCS
-  ncs_restraints_group_list : a list of ncs_restraint_group objects
-
-  Returns:
-    The same type of input object with converted transforms
-  """
-  assert bool(transforms_obj) == (not bool(ncs_restraints_group_list))
-  if transforms_obj:
-    ncs_restraints_group_list = transforms_obj.get_ncs_restraints_group_list()
-  if ncs_restraints_group_list:
-    i = 0
-    for gr in ncs_restraints_group_list:
-      copies = []
-      for tr in gr.copies:
-        the,psi,phi =x[i*6:i*6+3]
-        rot = scitbx.rigid_body.rb_mat_xyz(
-          the=the, psi=psi, phi=phi, deg=False)
-        tran = matrix.rec(x[i*6+3:i*6+6],(3,1))
-        tr.r = (rot.rot_mat())
-        tr.t = tran
-        copies.append(tr)
-        i += 1
-      gr.copies = copies
-    if transforms_obj:
-      transforms_obj.update_using_ncs_restraints_group_list(
-        ncs_restraints_group_list)
-      return transforms_obj
-    else:
-      return ncs_restraints_group_list
 
 def rotation_to_angles(rotation, deg=False):
   """
@@ -197,35 +85,15 @@ def rotation_to_angles(rotation, deg=False):
     # angles2 = 180*angles2/math.pi
   return angles
 
-def angles_to_rotation(angles_xyz, deg=False, rotation_is_tuple=False):
-  """
-  Calculate rotation matrix R, such that R = Rx(alpha)*Ry(beta)*Rz(gamma)
-
-  Args:
-    angles_xyz : (flex.double) (alpha,beta,gamma)
-    deg : (bool) When False use radians, when True degrees
-    rotation_is_tuple : (bool) when False, return flxe.double object,
-      when True return tuple
-
-  Returns:
-  R : (tuple or flex.double) the components of a rotation matrix
-  """
-  assert len(angles_xyz) == 3
-  alpha,beta,gamma = angles_xyz
-  rot = scitbx.rigid_body.rb_mat_xyz(the=alpha, psi=beta, phi=gamma, deg=deg)
-  R = rot.rot_mat()
-  # adjust rounding to angle format
-  if deg: i = 6
-  else: i = 8
-  if rotation_is_tuple:
-    return R.round(i).elems
-  else:
-    return flex.double(R.round(i))
-
 def shake_transformations(x,
                           shake_angles_sigma      = 0.035,
                           shake_translation_sigma = 0.5):
   """
+  XXX
+  XXX Used here in get_weight().
+  XXX Not clear what relation MTRIX have to this function at all...
+  XXX
+
   Shake rotation matrices and translation vectors of a rotation matrices and
   translation vectors from the MTRIX records in a PDB file.
 
@@ -252,9 +120,12 @@ def shake_transformations(x,
 def compute_transform_grad(grad_wrt_xyz,
                            xyz_asu,
                            x,
-                           ncs_restraints_group_list=None,
-                           transforms_obj=None):
+                           ncs_restraints_group_list):
   """
+  XXX
+  XXX Consider making it method of class_ncs_restraints_group_list
+  XXX
+
   Compute gradient in respect to the rotation angles and the translation
   vectors. R = Rx(the)Ry(psi)Rz(phi)
 
@@ -271,9 +142,6 @@ def compute_transform_grad(grad_wrt_xyz,
   Returns:
     g (flex.double): the gradient
   """
-  assert bool(transforms_obj) == (not bool(ncs_restraints_group_list))
-  if transforms_obj:
-    ncs_restraints_group_list = transforms_obj.get_ncs_restraints_group_list()
   g = []
   grad_wrt_xyz = flex.vec3_double(grad_wrt_xyz)
   i = 0
@@ -302,43 +170,6 @@ def compute_transform_grad(grad_wrt_xyz,
       g.extend(grad_wrt_t)
       i += 1
   return flex.double(g)
-
-def get_ncs_sites_cart(ncs_obj=None,
-                       fmodel=None,
-                       xray_structure=None,
-                       sites_cart=None,
-                       extended_ncs_selection=None):
-  """
-  Args::
-    ncs_obj: an object that contains fmodel, sites_cart or xray_structure
-      and an atom selection flags for a single NCS copy.
-
-  Returns:
-    (flex.vec3): coordinate sites cart of the single NCS copy
-  """
-  if ncs_obj:
-    if hasattr(ncs_obj, 'extended_ncs_selection'):
-      extended_ncs_selection = ncs_obj.extended_ncs_selection
-    else:
-      assert extended_ncs_selection
-    if hasattr(ncs_obj, 'sites_cart'):
-      return ncs_obj.sites_cart().select(extended_ncs_selection)
-    elif hasattr(ncs_obj, 'fmodel'):
-      xrs_one_ncs = ncs_obj.fmodel.xray_structure.select(extended_ncs_selection)
-      return xrs_one_ncs.sites_cart()
-    elif  hasattr(ncs_obj, 'xray_structure') or xray_structure:
-      xrs_one_ncs = ncs_obj.xray_structure.sites_cart()
-      return xrs_one_ncs.select(extended_ncs_selection)
-  else:
-    if sites_cart:
-      return sites_cart().select(extended_ncs_selection)
-    elif fmodel:
-      xrs_one_ncs = fmodel.xray_structure.select(extended_ncs_selection)
-      return xrs_one_ncs.sites_cart()
-    elif  xray_structure:
-      xrs_one_ncs = xray_structure.sites_cart()
-      return xrs_one_ncs.select(extended_ncs_selection)
-
 
 def get_weight(fmodel=None,
                restraints_manager=None,
@@ -420,8 +251,7 @@ def get_weight(fmodel=None,
   elif u_iso:
     fmdc.xray_structure.shake_adp()
   elif transformations and have_transforms:
-    x = concatenate_rot_tran(
-      ncs_restraints_group_list = ncs_restraints_group_list)
+    x = ncs_restraints_group_list.concatenate_rot_tran()
     x = shake_transformations(
       x = x,
       shake_angles_sigma=0.035,
@@ -511,9 +341,8 @@ def apply_transforms(ncs_coordinates,
 
   # get the rotation and translation for the native coordinate system
   if bool(center_of_coordinates):
-    ncs_restraints_group_list = shift_translation_back_to_place(
-      shifts = center_of_coordinates,
-      ncs_restraints_group_list = ncs_restraints_group_list)
+    ncs_restraints_group_list = ncs_restraints_group_list.shift_translation_back_to_place(
+        shifts = center_of_coordinates)
   for nrg in ncs_restraints_group_list:
     master_ncs_selection = flex.bool(total_asu_length,nrg.master_iselection)
     for ncs_copy in nrg.copies:
@@ -525,216 +354,6 @@ def apply_transforms(ncs_coordinates,
     return flex.vec3_double(asu_xyz).round(3)
   else:
     return flex.vec3_double(asu_xyz)
-
-def get_extended_ncs_selection(ncs_restraints_group_list,
-                               refine_selection=None,
-                               assume_strick_ncs =False):
-  """
-  Args:
-    ncs_restraints_group_list: list of ncs_restraint_group objects
-    refine_selection (flex.siz_t): of all ncs related copies and
-      non ncs related parts to be included in selection (to be refined)
-    assume_strick_ncs (bool): assume that all atoms are NCS related
-      (applicable only if refine selection is not given)
-
-  Returns:
-    (flex.siz_t): selection of all ncs groups master ncs selection and
-      non ncs related portions that are being refined (exclude NCS copies)
-  """
-  if not refine_selection:
-    refine_selection = []
-    if not assume_strick_ncs:
-      msg = 'Please provide refine_selection when not all atoms are NCS related'
-      raise Sorry(msg)
-  refine_selection = set(refine_selection)
-  total_master_ncs_selection = set()
-  total_ncs_related_selection = set()
-  for nrg in ncs_restraints_group_list:
-    master_ncs_selection = nrg.master_iselection
-    total_master_ncs_selection.update(set(master_ncs_selection))
-    for ncs_copy in nrg.copies:
-      asu_selection = ncs_copy.iselection
-      total_ncs_related_selection.update(set(asu_selection))
-  if refine_selection:
-    # make sure all ncs related parts are in refine_selection
-    all_ncs = total_master_ncs_selection | total_ncs_related_selection
-    not_all_ncs_related_atoms_selected = bool(all_ncs - refine_selection)
-    if not_all_ncs_related_atoms_selected:
-      msg = 'refine_selection does not contain all ncs related atoms'
-      raise Sorry(msg)
-    #
-    extended_ncs_selection = refine_selection - total_ncs_related_selection
-    return flex.size_t(list(extended_ncs_selection))
-  else:
-    # if refine_selection is None
-    return flex.size_t(list(total_master_ncs_selection))
-
-def get_ncs_related_selection(ncs_restraints_group_list,asu_size):
-  """
-  Args:
-    ncs_restraints_group_list (list): list of ncs_restraint_group objects
-    asu_size (int): the total size of the ASU
-
-  Returns:
-    selection (flex.bool): selection of all ncs related atom in the ASU
-  """
-  total_master_ncs_selection = set()
-  total_ncs_related_selection = set()
-  for nrg in ncs_restraints_group_list:
-    master_ncs_selection = nrg.master_iselection
-    total_master_ncs_selection.update(set(master_ncs_selection))
-    for ncs_copy in nrg.copies:
-      asu_selection = ncs_copy.iselection
-      total_ncs_related_selection.update(set(asu_selection))
-  #
-  total_ncs_related_selection.update(total_master_ncs_selection)
-  ts = flex.size_t(list(total_ncs_related_selection))
-  selection = flex.bool(asu_size, ts)
-  return selection
-
-def shift_translation_to_center(shifts, ncs_restraints_group_list):
-  """
-  Add shifts to the translation component of ncs_restraints_group_list
-  towards the center of coordinates
-
-  Args:
-    shifts (list): [mu_1, mu_1, mu_2...] where the mu stands
-      for the shift of the master copy to the coordinate center mu is (dx,dy,dz)
-    ncs_restraints_group_list (list): ncs_restraints_group_list
-
-  Returns:
-    ncs_restraints_group_list (list):
-  """
-  new_list = []
-  if bool(shifts):
-    new_list = ncs_restraints_group_list_copy(ncs_restraints_group_list)
-    i = 0
-    for nrg in new_list:
-      for ncs_copy in nrg.copies:
-        mu = shifts[i]
-        i += 1
-        # Only the translation is changing
-        t = ncs_copy.r.elems * mu + ncs_copy.t - mu
-        ncs_copy.t = matrix.col(t[0])
-  return new_list
-
-def shift_translation_back_to_place(shifts, ncs_restraints_group_list):
-  """
-  shifts to the translation component of ncs_restraints_group_list from the
-  center of coordinates back to place
-
-  Args:
-    shifts (list): [mu_1, mu_1, mu_2...] where the mu stands
-      for the shift of the master copy to the coordinate center mu is (dx,dy,dz)
-    ncs_restraints_group_list: ncs_restraints_group_list
-
-  Returns:
-    new_list (list): list of ncs_restraints_group objects
-  """
-  if bool(shifts):
-    i = 0
-    new_list = ncs_restraints_group_list_copy(ncs_restraints_group_list)
-    for nrg in new_list:
-      for ncs_copy in nrg.copies:
-        mu = shifts[i]
-        i += 1
-        # Only the translation is changing
-        t = mu - ncs_copy.r.elems * mu + ncs_copy.t
-        ncs_copy.t = matrix.col(t[0])
-  else:
-    new_list = ncs_restraints_group_list
-  return new_list
-
-def get_ncs_groups_centers(xray_structure, ncs_restraints_group_list):
-  """
-  calculate the center of coordinate for the master of each ncs copy
-
-  Args:
-    xray_structure
-    ncs_restraints_group_list
-
-  Returns:
-    shifts (list): [mu_1, mu_1, mu_2...] where the mu stands
-    for the shift of the master copy to the coordinate center mu is (dx,dy,dz)
-  """
-  shifts = []
-  asu_xyz = xray_structure.sites_cart()
-  for nrg in ncs_restraints_group_list:
-    master_ncs_selection = nrg.master_iselection
-    master_xyz = asu_xyz.select(master_ncs_selection)
-    mu_m = flex.vec3_double([master_xyz.mean()])
-    # add a copy of the master coordinate center for each copy
-    for ncs_copy in nrg.copies:
-      shifts.append(mu_m)
-  return shifts
-
-def ncs_restraints_group_list_copy(ncs_restraints_group_list):
-  """
-  Deep copy of ncs_restraints_group_list
-
-  Args:
-    ncs_restraints_group_list: list of ncs_restraint_group
-
-  Returns:
-    new_list: a deep copy of ncs_restraints_group_list
-  """
-  from iotbx.ncs import NCS_restraint_group
-  from iotbx.ncs import NCS_copy
-  new_list = []
-  for nrg in ncs_restraints_group_list:
-    new_nrg = NCS_restraint_group(nrg.master_iselection)
-    for ncs in nrg.copies:
-      new_ncs_copy = NCS_copy(
-        copy_iselection=ncs.iselection,
-        rot=ncs.r,
-        tran=ncs.t)
-      new_nrg.copies.append(new_ncs_copy)
-    new_list.append(new_nrg)
-  return new_list
-
-def ncs_groups_selection(ncs_restraints_group_list,selection):
-  """
-  Modifies the selections of master and copies according the "selection"
-  - Keep the order of selected atoms
-  - Keep only atoms that appear in master and ALL copies
-  Also modify "selection" to include ncs related atoms only if selected in
-  both master and ALL ncs copies (The modified selection is not returned in
-  current version)
-
-  Args:
-    ncs_restraints_group_list (list): list of ncs_restraints_group objects
-    selection (flex.bool or flex.size_t): atom selection
-
-  Returns:
-    new_nrg_list (list): list of modified ncs_restraints_group objects
-  """
-  if isinstance(selection,flex.bool): selection = selection.iselection(True)
-  sel_set = set(selection)
-  new_nrg_list = ncs_restraints_group_list_copy(ncs_restraints_group_list)
-  # check what are the selection that shows in both master and all copies
-  for nrg in new_nrg_list:
-    m = set(nrg.master_iselection)
-    m_list = [(pos,indx) for pos,indx in enumerate(list(nrg.master_iselection))]
-    m_in_sel = m.intersection(sel_set)
-    common_selection_pos = {pos for (pos,indx) in m_list if indx in m_in_sel}
-    for ncs in nrg.copies:
-      c = set(ncs.iselection)
-      c_list = [(pos,indx) for pos,indx in enumerate(list(ncs.iselection))]
-      copy_in_sel = c.intersection(sel_set)
-      include_set = {pos for (pos,indx) in c_list if indx in copy_in_sel}
-      common_selection_pos.intersection_update(include_set)
-      if not bool(common_selection_pos): break
-    # use the common_selection_pos to update all selections
-    nrg.master_iselection, not_included = selected_positions(
-      nrg.master_iselection,common_selection_pos)
-    selection = remove_items_from_selection(selection,not_included)
-    for ncs in nrg.copies:
-      ncs.iselection, not_included = selected_positions(
-        ncs.iselection,common_selection_pos)
-      selection = remove_items_from_selection(selection,not_included)
-
-  return new_nrg_list
-
 
 def selected_positions(selection,positions):
   """
@@ -816,26 +435,13 @@ def get_list_of_best_ncs_copy_map_correlation(
     mp = mmtbx.maps.correlation.from_map_and_xray_structure_or_fmodel(
       fmodel = fmodel)
   for nrg in ncs_groups:
-    selections = [nrg.master_iselection]
-    for ncs in nrg.copies:
-      selections.append(ncs.iselection)
+    selections = nrg.get_iselections_list()
     cc = mp.cc(selections=selections)
     i_seq = cc.index(max(cc)) # best matching copy
     if(i_seq == 0): continue
     #
     c_i = i_seq-1
-    # switch master and copy selection
-    nrg.master_iselection, nrg.copies[c_i].iselection = \
-      nrg.copies[c_i].iselection, nrg.master_iselection
-    # Adjust rotation and translation for the new master
-    r = nrg.copies[c_i].r = (nrg.copies[c_i].r.transpose())
-    t = nrg.copies[c_i].t = -(nrg.copies[c_i].r * nrg.copies[c_i].t)
-    # change all other rotations and translations to the new master
-    for i in xrange(len(nrg.copies)):
-      if i == c_i: continue
-      # change translation before rotation
-      nrg.copies[i].t = (nrg.copies[i].r * t + nrg.copies[i].t)
-      nrg.copies[i].r = (nrg.copies[i].r * r)
+    nrg.make_nth_copy_master(c_i)
 
 def get_refine_selection(refine_selection=None,number_of_atoms=None):
   """ populate refine_selection with all atoms if no selection is given  """
@@ -845,185 +451,3 @@ def get_refine_selection(refine_selection=None,number_of_atoms=None):
       selection_list = range(number_of_atoms)
       refine_selection = flex.size_t(selection_list)
   return refine_selection
-
-def iselection_ncs_to_asu(iselection_ncs,ncs_chain_id,hierarchy_asu):
-  """
-  Convert iselection of NCS related atoms in the NCS copy to the ASU iselection
-
-  Args:
-    ncs_len (int)
-    ncs_chain_id (str)
-    iselection_ncs (flex.size_t)
-    hierarchy_asu hierarchy object)
-
-  Returns:
-    iselection_asu (flex.size_t)
-  """
-  asu_len = hierarchy_asu.atoms_size()
-  atom_cache = hierarchy_asu.atom_selection_cache().selection
-  sel = atom_cache('chain ' + ncs_chain_id)
-  sel = sel.iselection(True)
-  offset = min(list(sel))
-  iselection_ncs += offset
-  selection_bool = flex.bool(asu_len,iselection_ncs)
-  return selection_bool.iselection(True)
-
-def iselection_asu_to_ncs(iselection_asu,ncs_chain_id,hierarchy_asu):
-  """
-  Convert iselection of NCS related atoms in the NCS copy to the ASU iselection
-
-  Args:
-    ncs_chain_id (str)
-    iselection_asu (flex.size_t)
-    hierarchy_ncs (hierarchy object)
-
-  Returns:
-    iselection_ncs (flex.size_t)
-  """
-  atom_cache = hierarchy_asu.atom_selection_cache()
-  ph_ncs_select = atom_cache.selection('chain ' + ncs_chain_id)
-  chain_start =  min(list(ph_ncs_select.iselection(True)))
-  return iselection_asu - chain_start
-
-def check_ncs_group_list(
-    ncs_restraints_group_list,
-    ph,
-    chain_max_rmsd=10.0,
-    log=None):
-  """
-  Check that all copies relate correctly to master via the transforms
-
-  Args:
-    ncs_restraints_group_list : list of ncs restraints group objects
-    ph: Hierarchy object
-    chain_max_rmsd (float): maximum allowed rmsd between coordinates copies
-
-  Returns:
-    nrgl_ok (bool): True when ncs_restraints_group_list is OK
-  """
-  if not log: log = sys.stdout
-  nrgl_ok = True
-  for i,gr in enumerate(ncs_restraints_group_list):
-    master_xyz = ph.atoms().extract_xyz().select(gr.master_iselection)
-    for j,cp in enumerate(gr.copies):
-      copy_xyz = ph.atoms().extract_xyz().select(cp.iselection)
-      xyz = cp.r.elems * master_xyz + cp.t
-      rmsd = copy_xyz.rms_difference(xyz)
-      nrgl_ok &= (rmsd <= chain_max_rmsd)
-      if (rmsd > chain_max_rmsd):
-        print >>log,'Allowed rmsd : {}, rmsd: {}'.format(chain_max_rmsd,rmsd)
-  return nrgl_ok
-
-def make_unique_chain_names(unique_chain_names,number_of_names=1):
-  """
-  Produce a sorted list of new unique chain names.
-  Chain names are strings of one or two characters long.
-
-  Args:
-    unique_chain_names (set): Current names
-    number_of_names (int): number of new names
-
-  Returns:
-    new_names_list (list): sorted list on new names
-  """
-  # check availability of one letter chain names
-  chr_list1 = list(set(string.ascii_uppercase) - set(unique_chain_names))
-  chr_list2 = list(set(string.ascii_lowercase) - set(unique_chain_names))
-  chr_list1.sort()
-  chr_list2.sort()
-  new_names_list = chr_list1 + chr_list2
-  if len(new_names_list) < number_of_names:
-    # calc how many more chain names we need
-    n_names =  number_of_names - len(new_names_list)
-    # the number of character needed to produce new names
-    chr_number = int(math.sqrt(n_names)) + 1
-    # build character list
-    chr_list = list(string.ascii_uppercase) + \
-               list(string.ascii_lowercase) + \
-               list(string.digits)
-    # take only as many characters as needed
-    chr_list = chr_list[:chr_number]
-    extra_names = set([ x+y for x in chr_list for y in chr_list])
-    # make sure not using existing names
-    extra_names = list(extra_names - set(unique_chain_names))
-    extra_names.sort()
-    new_names_list.extend(extra_names)
-  return new_names_list[:number_of_names]
-
-def ncs_group_iselection(ncs_restraints_group_list,group_num):
-  """
-  Collects and returns iselection of all related atoms in NCS group
-
-  Args:
-    ncs_restraints_group_list : list of ncs restraints group objects
-    group_num (int): the group number in the list (first group is 0)
-
-  Returns:
-    isel (flex.size_t): complete NCS group selection
-  """
-  # check that the number of the NCS group is valid
-  if group_num >= len(ncs_restraints_group_list): return flex.size_t()
-  gr = ncs_restraints_group_list[group_num]
-  isel = gr.master_iselection
-  for cp in gr.copies:
-    isel.extend(cp.iselection)
-  # make sure sequential order of selection indices
-  return flex.sorted(isel)
-
-
-def recalculate_ncs_transforms(ncs_restraints_group_list,asu_site_cart):
-  """
-  Re-evaluate the rotation and translation in the ncs groups list, base on
-  the ncs groups selection and the atoms location.
-  Updates the ncs_restraints_group_list object
-
-  Args:
-    ncs_restraints_group_list: list of ncs restraints group objects
-    asu_site_cart (flex.vec_3): the complete ASU sites cart (coordinates)
-  """
-  for gr in ncs_restraints_group_list:
-    m_sel = gr.master_iselection
-    for cp in gr.copies:
-      c_sel = cp.iselection
-      # other_sites are the master, reference_sites are the copies
-      lsq_fit_obj = superpose.least_squares_fit(
-          reference_sites = asu_site_cart.select(c_sel),
-          other_sites     = asu_site_cart.select(m_sel))
-      cp.r = lsq_fit_obj.r
-      cp.t = lsq_fit_obj.t
-
-def filter_ncs_restraints_group_list(whole_h, ncs_restr_group_list):
-  """ Remove ncs groups where master or copy does not cover whole chain
-  (some atoms are left behind).
-  Reason for this - when big moves are likely (e.g. in real-space refine or
-  model idealization), the chain can get a big gap in place where NCS ends.
-  This leads to undesired artefacts in refinement.
-  """
-  def whole_chain_in_ncs(whole_h, master_iselection):
-    m_c = whole_h.select(master_iselection)
-    m_c_id = m_c.only_model().chains()[0].id
-    for chain in whole_h.only_model().chains():
-      if chain.id == m_c_id:
-        n_non_h_atoms = 0
-        for a in chain.atoms():
-          # print "'%s'" % a.element
-          if not a.element_is_hydrogen():
-            n_non_h_atoms += 1
-        # print "n_non_h_atoms, master_iselection.size()", n_non_h_atoms, master_iselection.size()
-        if n_non_h_atoms <= master_iselection.size():
-          return True
-        else:
-          return False
-  n_gr_to_remove = []
-  for i, ncs_gr in enumerate(ncs_restr_group_list):
-    if not whole_chain_in_ncs(whole_h, ncs_gr.master_iselection):
-      n_gr_to_remove.append(i)
-      continue
-    for c in ncs_gr.copies:
-      if not whole_chain_in_ncs(whole_h, c.iselection):
-        n_gr_to_remove.append(i)
-        break
-  result = deepcopy(ncs_restr_group_list)
-  for i in reversed(n_gr_to_remove):
-    del result[i]
-  return result

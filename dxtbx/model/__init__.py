@@ -9,6 +9,7 @@ from dxtbx.model.detector import *
 from dxtbx.model.scan import *
 from dxtbx.model.crystal import *
 from dxtbx.model.profile import *
+from libtbx.containers import OrderedSet, OrderedDict
 
 class DetectorAux(boost.python.injector, Detector):
   def iter_panels(self):
@@ -305,6 +306,13 @@ class MosaicCrystalSauter2014Aux(CrystalAux, MosaicCrystalSauter2014):
 
     print >> out, "\n".join(msg)
 
+  def get_A_as_sqr(self): # required for lunus
+    from scitbx.matrix import sqr
+    return sqr(self.get_A())
+
+  def get_A_inverse_as_sqr(self):
+    return self.get_A_as_sqr().inverse()
+
   def __str__(self):
     from cStringIO import StringIO
     s = StringIO()
@@ -369,40 +377,38 @@ class ExperimentListAux(boost.python.injector, ExperimentList):
 
   def beams(self):
     ''' Get a list of the unique beams (includes None). '''
-    from libtbx.containers import OrderedSet
-    return list(OrderedSet([e.beam for e in self]))
+    return list(OrderedSet(e.beam for e in self))
 
   def detectors(self):
     ''' Get a list of the unique detectors (includes None). '''
-    from libtbx.containers import OrderedSet
-    return list(OrderedSet([e.detector for e in self]))
+    return list(OrderedSet(e.detector for e in self))
 
   def goniometers(self):
     ''' Get a list of the unique goniometers (includes None). '''
-    from libtbx.containers import OrderedSet
-    return list(OrderedSet([e.goniometer for e in self]))
+    return list(OrderedSet(e.goniometer for e in self))
 
   def scans(self):
     ''' Get a list of the unique scans (includes None). '''
-    from libtbx.containers import OrderedSet
-    return list(OrderedSet([e.scan for e in self]))
+    return list(OrderedSet(e.scan for e in self))
 
   def crystals(self):
     ''' Get a list of the unique crystals (includes None). '''
-    from libtbx.containers import OrderedSet
-    return list(OrderedSet([e.crystal for e in self]))
+    return list(OrderedSet(e.crystal for e in self))
 
   def profiles(self):
     ''' Get a list of the unique profile models (includes None). '''
-    from libtbx.containers import OrderedSet
-    return list(OrderedSet([e.profile for e in self]))
+    return list(OrderedSet(e.profile for e in self))
+
+  def scaling_models(self):
+    ''' Get a list of the unique scaling models (includes None). '''
+    return list(OrderedSet(e.scaling_model for e in self))
+
 
   def imagesets(self):
     ''' Get a list of the unique imagesets (includes None).
 
     This returns unique complete sets rather than partial.
     '''
-    from libtbx.containers import OrderedSet
     return list(OrderedSet([e.imageset for e in self if e.imageset is not None]))
     # temp = OrderedDict([(e.imageset.reader(), i)
     #   for i, e in enumerate(self) if e.imageset is not None])
@@ -440,7 +446,6 @@ class ExperimentListAux(boost.python.injector, ExperimentList):
 
   def to_dict(self):
     ''' Serialize the experiment list to dictionary. '''
-    from libtbx.containers import OrderedDict
     from dxtbx.imageset import ImageSet, ImageSweep, ImageGrid
 
     # Check the experiment list is consistent
@@ -454,6 +459,7 @@ class ExperimentListAux(boost.python.injector, ExperimentList):
     clist = self.crystals()
     ilist = self.imagesets()
     plist = self.profiles()
+    scalelist = self.scaling_models()
 
     # Create the output dictionary
     result = OrderedDict()
@@ -483,6 +489,8 @@ class ExperimentListAux(boost.python.injector, ExperimentList):
         obj['crystal'] = find_index(clist, e.crystal)
       if e.profile is not None:
         obj['profile'] = find_index(plist, e.profile)
+      if e.scaling_model is not None:
+        obj['scaling_model'] = find_index(scalelist, e.scaling_model)
       if e.imageset is not None:
         same = [e.imageset is imset for imset in ilist]
         assert(same.count(True) == 1)
@@ -536,12 +544,13 @@ class ExperimentListAux(boost.python.injector, ExperimentList):
       result['imageset'].append(r)
 
     # Extract all the model dictionaries
-    result['beam']       = [b.to_dict() for b in blist if b is not None]
-    result['detector']   = [d.to_dict() for d in dlist if d is not None]
+    result['beam'] = [b.to_dict() for b in blist if b is not None]
+    result['detector'] = [d.to_dict() for d in dlist if d is not None]
     result['goniometer'] = [g.to_dict() for g in glist if g is not None]
-    result['scan']       = [s.to_dict() for s in slist if s is not None]
-    result['crystal']    = [c.to_dict() for c in clist if c is not None]
-    result['profile']    = [p.to_dict() for p in plist if p is not None]
+    result['scan'] = [s.to_dict() for s in slist if s is not None]
+    result['crystal'] = [c.to_dict() for c in clist if c is not None]
+    result['profile'] = [p.to_dict() for p in plist if p is not None]
+    result['scaling_model'] = [s.to_dict() for s in scalelist if s is not None]
 
     # Return the dictionary
     return result

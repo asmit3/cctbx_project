@@ -8,7 +8,8 @@ import numpy as np
 from test3_logarithm import mcmc
 from scitbx.matrix import sqr
 from scitbx.examples.exgaussian.lbfgs_exgauss_helper import lbfgs_exgauss 
-
+import random   # Importrandom should be moved inside function choose_random_datapts later #FIXME
+random.seed(22) # Setting random seed here for function choose_random_datapts. 
 class exgauss_fit(
   normal_eqns.non_linear_ls,
   normal_eqns.non_linear_ls_mixin):
@@ -42,6 +43,32 @@ class exgauss_fit(
     assert len(self.y) == len(self.t)
     self.n_data = len(self.t)
     self.restart()
+    # Get an initial estimate of the errors on the parameters using LBFGS
+    self.bootstrap_errors = [1.0, 1.0, 1.0] #self.error_estimate_by_bootstrap() 
+
+  def choose_random_datapts(self, dropout_fraction=0.2):
+    sample_size = int(len(self.t)*(1-dropout_fraction))
+    idx = random.sample(xrange(len(self.t)), sample_size)
+    t_subset = [self.t[i] for i in sorted(idx)]
+    y_subset = [self.y[i] for i in sorted(idx)]
+    return flex.double(t_subset), flex.double(y_subset)
+  
+  def error_estimate_by_bootstrap(self):
+    if len(self.t) < 4:
+      print 'Too small a sample size to get a reliable error estimate by bootstrap'
+      return [1.0, 1.0, 1.0]
+    Ntrials = 10
+    params = []
+    for trial in range(Ntrials):
+      t_subset,y_subset = self.choose_random_datapts()
+      w_obs = [1.0 for elem in t_subset]
+      initial = self.x_0
+      fit = lbfgs_exgauss(t_subset, y_subset, w_obs, initial)
+      params.append(fit.a)
+    return np.std(params, axis=0)
+    
+
+
 
   def restart(self):
     self.x = self.x_0.deep_copy()
@@ -263,6 +290,7 @@ class mcmc_exgauss():
     initial = intensities.x_0
     mu0,sigma0,tau0 = intensities.x
     self.error_diagonal = [1., 1., 1.]
+    self.bootstrap_errors = intensities.bootstrap_errors
     # Get the covariance matrix
     get_covar_from_LM = False
     if get_covar_from_LM:
@@ -335,9 +363,12 @@ class mcmc_exgauss():
     proposal_width =  0.001*np.abs(maxI-minI)
 #    print 'initial guesses and proposal width = ',mu0, sigma0, tau0, proposal_width
     mcmc_helper = mcmc()
+#    I_exp, cdf_exp = mcmc_helper.find_x_from_expdata_annlib(X1,self.cdf_cutoff)
+#    fitted_cdf = intensities.exgauss_cdf(I_exp, mu0, sigma0, tau0)
+#    print 'Experimental value of I_%.2f and corresponding cdf %.2f= %12.3f'%(self.cdf_cutoff, fitted_cdf,I_exp)
     I_avg_ideal, I_var_ideal, accept_rate= mcmc_helper.sampler(X1, samples=self.nsteps, mu_init= mu0,sigma_init = sigma0, tau_init = tau0,
                    proposal_width = proposal_width, t_start = self.t_start, dt = self.dt,cdf_cutoff=self.cdf_cutoff,
-                   plot=False, analyse_mcmc = False, seed=self.mcmc_seed, prior_errors = self.error_diagonal, residual=residual)
+                   plot=False, analyse_mcmc = False, seed=self.mcmc_seed, prior_errors = self.bootstrap_errors, residual=residual)
 #    mu,sigma, tau = params[-1]
     mu,sigma, tau = [mu0, sigma0, tau0]
 

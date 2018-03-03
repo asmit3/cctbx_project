@@ -42,37 +42,35 @@ namespace dxtbx { namespace model { namespace boost_python {
         obj.get_flux(),
         obj.get_transmission());
     }
+
+    static
+    boost::python::tuple getstate(boost::python::object obj)
+    {
+      const Beam &beam = boost::python::extract<const Beam &>(obj)();
+      return boost::python::make_tuple(
+          obj.attr("__dict__"),
+          beam.get_s0_at_scan_points());
+    }
+
+    static
+    void setstate(boost::python::object obj, boost::python::tuple state)
+    {
+      Beam &beam = boost::python::extract<Beam&>(obj)();
+      DXTBX_ASSERT(boost::python::len(state) == 2);
+
+      // restore the object's __dict__
+      boost::python::dict d = boost::python::extract<boost::python::dict>(
+          obj.attr("__dict__"))();
+      d.update(state[0]);
+
+      // restore the internal state of the C++ object
+      scitbx::af::const_ref< vec3<double> > s0_list = boost::python::extract<
+        scitbx::af::const_ref< vec3<double> > >(state[1]);
+      beam.set_s0_at_scan_points(s0_list);
+    }
+
+    static bool getstate_manages_dict() { return true; }
   };
-
-  template <>
-  boost::python::dict to_dict<Beam>(const Beam &obj) {
-    boost::python::dict result;
-    result["direction"] = obj.get_direction();
-    result["wavelength"] = obj.get_wavelength();
-    result["divergence"] = rad_as_deg(obj.get_divergence());
-    result["sigma_divergence"] = rad_as_deg(obj.get_sigma_divergence());
-    result["polarization_normal"] = obj.get_polarization_normal();
-    result["polarization_fraction"] = obj.get_polarization_fraction();
-    result["flux"] = obj.get_flux();
-    result["transmission"] = obj.get_transmission();
-    return result;
-  }
-
-  template <>
-  Beam* from_dict<Beam>(boost::python::dict obj) {
-    return new Beam(
-      boost::python::extract< vec3<double> >(obj["direction"]),
-      boost::python::extract< double >(obj["wavelength"]),
-      deg_as_rad(
-        boost::python::extract< double >(obj.get("divergence", 0.0))),
-      deg_as_rad(
-        boost::python::extract< double >(obj.get("sigma_divergence", 0.0))),
-      boost::python::extract< vec3<double> >(
-        obj.get("polarization_normal", vec3<double>(0.0, 1.0, 0.0))),
-      boost::python::extract< double >(obj.get("polarization_fraction", 0.999)),
-      boost::python::extract< double >(obj.get("flux", 0)),
-      boost::python::extract< double >(obj.get("transmission", 1)));
-  }
 
   static Beam* make_beam(vec3<double> sample_to_source, double wavelength,
                          double divergence, double sigma_divergence, bool deg) {
@@ -158,6 +156,71 @@ namespace dxtbx { namespace model { namespace boost_python {
     beam.rotate_around_origin(axis, angle_rad);
   }
 
+  static
+  void Beam_set_s0_at_scan_points_from_tuple(Beam &beam, boost::python::tuple l) {
+    scitbx::af::shared< vec3<double> > s0_list;
+    for (std::size_t i = 0; i < boost::python::len(l); ++i) {
+      vec3<double> s0 = boost::python::extract< vec3<double> >(l[i]);
+      s0_list.push_back(s0);
+    }
+    beam.set_s0_at_scan_points(s0_list.const_ref());
+  }
+
+  static
+  void Beam_set_s0_at_scan_points_from_list(Beam &beam, boost::python::list l) {
+    scitbx::af::shared< vec3<double> > s0_list;
+    for (std::size_t i = 0; i < boost::python::len(l); ++i) {
+      vec3<double> s0 = boost::python::extract< vec3<double> >(l[i]);
+      s0_list.push_back(s0);
+    }
+    beam.set_s0_at_scan_points(s0_list.const_ref());
+  }
+
+  template <>
+  boost::python::dict to_dict<Beam>(const Beam &obj) {
+    boost::python::dict result;
+    result["direction"] = obj.get_direction();
+    result["wavelength"] = obj.get_wavelength();
+    result["divergence"] = rad_as_deg(obj.get_divergence());
+    result["sigma_divergence"] = rad_as_deg(obj.get_sigma_divergence());
+    result["polarization_normal"] = obj.get_polarization_normal();
+    result["polarization_fraction"] = obj.get_polarization_fraction();
+    result["flux"] = obj.get_flux();
+    result["transmission"] = obj.get_transmission();
+    if(obj.get_num_scan_points() > 0){
+      boost::python::list l;
+      scitbx::af::shared< vec3<double> > s0_at_scan_points = obj.get_s0_at_scan_points();
+      for (scitbx::af::shared< vec3<double> >::iterator it = s0_at_scan_points.begin(); it != s0_at_scan_points.end(); ++it) {
+        l.append(boost::python::make_tuple(
+          (*it)[0], (*it)[1], (*it)[2]));
+      }
+      result["s0_at_scan_points"] = l;
+
+    }
+    return result;
+  }
+
+  template <>
+  Beam* from_dict<Beam>(boost::python::dict obj) {
+    Beam* b = new Beam(
+      boost::python::extract< vec3<double> >(obj["direction"]),
+      boost::python::extract< double >(obj["wavelength"]),
+      deg_as_rad(
+        boost::python::extract< double >(obj.get("divergence", 0.0))),
+      deg_as_rad(
+        boost::python::extract< double >(obj.get("sigma_divergence", 0.0))),
+      boost::python::extract< vec3<double> >(
+        obj.get("polarization_normal", vec3<double>(0.0, 1.0, 0.0))),
+      boost::python::extract< double >(obj.get("polarization_fraction", 0.999)),
+      boost::python::extract< double >(obj.get("flux", 0)),
+      boost::python::extract< double >(obj.get("transmission", 1)));
+    if(obj.has_key("s0_at_scan_points")){
+      boost::python::list s0_at_scan_points = boost::python::extract<boost::python::list>(obj["s0_at_scan_points"]);
+      Beam_set_s0_at_scan_points_from_list(*b, s0_at_scan_points);
+    }
+    return b;
+  }
+
   void export_beam()
   {
     // Export BeamBase
@@ -208,6 +271,21 @@ namespace dxtbx { namespace model { namespace boost_python {
         &BeamBase::get_transmission)
       .def("set_transmission",
         &BeamBase::set_transmission)
+      .add_property("num_scan_points", &BeamBase::get_num_scan_points)
+      .def("get_num_scan_points",
+        &BeamBase::get_num_scan_points)
+      .def("set_s0_at_scan_points",
+        &BeamBase::set_s0_at_scan_points)
+      .def("set_s0_at_scan_points",
+        &Beam_set_s0_at_scan_points_from_tuple)
+      .def("set_s0_at_scan_points",
+        &Beam_set_s0_at_scan_points_from_list)
+      .def("get_s0_at_scan_points",
+        &BeamBase::get_s0_at_scan_points)
+      .def("get_s0_at_scan_point",
+        &BeamBase::get_s0_at_scan_point)
+      .def("reset_scan_points",
+        &BeamBase::reset_scan_points)
       .def("rotate_around_origin",
           &rotate_around_origin, (
             arg("axis"),

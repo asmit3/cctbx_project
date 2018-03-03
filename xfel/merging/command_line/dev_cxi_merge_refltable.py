@@ -11,6 +11,11 @@ from xfel.merging.command_line.dev_cxi_merge import Script
 from xfel.cxi.merging_utils import null_data
 from libtbx import Auto
 
+from xfel.merging.algorithms.error_model import compute_normalized_deviations, apply_sd_error_params
+import xfel
+xfel.compute_normalized_deviations = compute_normalized_deviations
+xfel.apply_sd_error_params = apply_sd_error_params
+
 from xfel.merging.algorithms.error_model.sdfac_refine import sdfac_refine_refltable
 import xfel.merging.algorithms.error_model
 xfel.merging.algorithms.error_model.sdfac_refine.sdfac_refine = sdfac_refine_refltable
@@ -19,14 +24,10 @@ from xfel.merging.algorithms.error_model.errors_from_residuals import errors_fro
 import xfel.merging.algorithms.error_model
 xfel.merging.algorithms.error_model.errors_from_residuals.errors_from_residuals = errors_from_residuals_refltable
 
-from xfel.merging.algorithms.error_model import compute_normalized_deviations, apply_sd_error_params
-import xfel
-xfel.compute_normalized_deviations = compute_normalized_deviations
-xfel.apply_sd_error_params = apply_sd_error_params
-
 def merging_reflection_table():
   table = flex.reflection_table()
   table['miller_index'] = flex.miller_index()
+  table['miller_index_original'] = flex.miller_index()
   table['scaled_intensity'] = flex.double()
   table['isigi'] = flex.double()
   table['slope'] = flex.double()
@@ -97,11 +98,19 @@ class refltable_scaling_manager(scaling_manager):
                             'slope': refl[2],
                             'miller_id':i,
                             'crystal_id':crystal_id,
-                            'iobs':data.unscaled_obs[hkl][j]})
+                            'iobs':data.extra_stuff[hkl][0][j],
+                            'miller_index_original':data.extra_stuff[hkl][1][j]})
+
     data.ISIGI = reflections
 
-    crystal_d = {'b_matrix':data.indexed_cell.reciprocal().orthogonalization_matrix(),
-                 'u_matrix':data.current_orientation.crystal_rotation_matrix(),
+    from scitbx.matrix import sqr
+    ori = data.current_orientation
+    a_matrix = sqr(ori.reciprocal_matrix())
+    b_matrix = sqr(ori.unit_cell().fractionalization_matrix()).transpose()
+    u_matrix = a_matrix * b_matrix.inverse()
+
+    crystal_d = {'b_matrix':b_matrix.elems,
+                 'u_matrix':u_matrix.elems,
                  'wavelength':data.wavelength,
                  'n_refl':len(reflections)}
     if self.params.postrefinement.enable:

@@ -687,6 +687,60 @@ class _(boost.python.injector, ext.root, __hash_eq_mixin):
     result.reset_i_seq_if_necessary()
     return result
 
+  def remove_residue_groups_with_atoms_on_special_positions_selective(self,
+        crystal_symmetry):
+    import iotbx.pdb
+    get_class = iotbx.pdb.common_residue_names_get_class
+    self.reset_i_seq_if_necessary()
+    special_position_settings = crystal.special_position_settings(
+      crystal_symmetry = crystal_symmetry)
+    # Using
+    # unconditional_general_position_flags=(self.atoms().extract_occ() != 1)
+    # will skip atoms on sp that have partial occupancy.
+    site_symmetry_table = \
+      special_position_settings.site_symmetry_table(
+        sites_cart = self.atoms().extract_xyz())
+    spi = site_symmetry_table.special_position_indices()
+    removed = []
+    for c in self.chains():
+      for rg in c.residue_groups():
+        keep=True
+        for i in rg.atoms().extract_i_seq():
+          if(i in spi):
+            keep=False
+            break
+        if(not keep):
+          for resname in rg.unique_resnames():
+            if(get_class(resname) == "common_amino_acid" or
+               get_class(resname) == "common_rna_dna"):
+              raise RuntimeError(
+                "Amino-acid residue or NA is on special position.")
+          for resname in rg.unique_resnames():
+            removed.append(",".join([c.id, rg.resid(), resname]))
+          c.remove_residue_group(residue_group=rg)
+    return removed
+
+  def shift_to_origin(self, crystal_symmetry):
+    uc = crystal_symmetry.unit_cell()
+    sites_frac = uc.fractionalize(self.atoms().extract_xyz())
+    l = abs(min(sites_frac.min()))
+    r = abs(max(sites_frac.max()))
+    rl = max(l, r)+2
+    rr= range(int(-rl), int(rl))
+    shift_best = None
+    for x in rr:
+      for y in rr:
+        for z in rr:
+          sf = sites_frac+[x,y,z]
+          sc = uc.orthogonalize(sf)
+          cmf = uc.fractionalize(sc.mean())
+          if(cmf[0]>=0 and cmf[0]<1 and
+             cmf[1]>=0 and cmf[1]<1 and
+             cmf[2]>=0 and cmf[2]<1):
+            shift_best = [x,y,z]
+    assert shift_best is not None # should never happen
+    self.atoms().set_xyz(uc.orthogonalize(sites_frac+shift_best))
+
   def expand_to_p1(self, crystal_symmetry):
     # ANISOU will be invalid
     import string
@@ -1377,12 +1431,11 @@ class _(boost.python.injector, ext.root, __hash_eq_mixin):
       atom = atoms[i_seq]
       atom.set_charge(charge)
 
-  def truncate_to_poly_gly(self):
+  def truncate_to_poly(self, atom_names_set=set()):
     pdb_atoms = self.atoms()
     pdb_atoms.reset_i_seq()
     from iotbx.pdb import amino_acid_codes
     aa_resnames = iotbx.pdb.amino_acid_codes.one_letter_given_three_letter
-    gly_atom_names = set([" N  ", " CA ", " C  ", " O  "])
     for model in self.models():
       for chain in model.chains():
         for rg in chain.residue_groups():
@@ -1394,8 +1447,16 @@ class _(boost.python.injector, ext.root, __hash_eq_mixin):
           if (have_amino_acid()):
             for ag in rg.atom_groups():
               for atom in ag.atoms():
-                if (atom.name not in gly_atom_names):
+                if (atom.name not in atom_names_set):
                   ag.remove_atom(atom=atom)
+
+  def truncate_to_poly_gly(self):
+    self.truncate_to_poly(
+        atom_names_set=set([" N  ", " CA ", " C  ", " O  "]))
+
+  def truncate_to_poly_ala(self):
+    self.truncate_to_poly(
+        atom_names_set=set([" N  ", " CA ", " C  ", " O  ", " CB "]))
 
   def convert_semet_to_met(self):
     for i_seq, atom in enumerate(self.atoms()):
@@ -2567,6 +2628,9 @@ class show_summary(input):
         level_id=level_id,
         level_id_exception=level_id_exception)
 
+# MARKED_FOR_DELETION_OLEG
+# Reason: functionality is moved to mmtbx.model and uses better all_chain_ids
+# function from iotbx.pdb.utils
 def suffixes_for_chain_ids(suffixes=Auto):
   if (suffixes is Auto):
     suffixes="123456789" \
@@ -2580,7 +2644,7 @@ def append_chain_id_suffixes(roots, suffixes=Auto):
   for root,suffix in zip(roots, suffixes):
     for model in root.models():
       for chain in model.chains():
-        assert len(chain.id) == 1
+        assert len(chain.id) == 1, len(chain.id)
         chain.id += suffix
 
 def join_roots(roots, chain_id_suffixes=Auto):
@@ -2593,8 +2657,10 @@ def join_roots(roots, chain_id_suffixes=Auto):
   for rt in roots:
     result.transfer_chains_from_other(other=rt)
   return result
+# END_MARKED_FOR_DELETION_OLEG
 
 # XXX: Nat's utility functions
+# also used in ncs_search.py
 def new_hierarchy_from_chain (chain) :
   """
   Given a chain object, create an entirely new hierarchy object contaning only

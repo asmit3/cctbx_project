@@ -8,13 +8,9 @@ from cctbx.array_family import flex
 import iotbx.phil
 from libtbx.str_utils import make_sub_header
 import sys, math
-from mmtbx.ncs import restraints
 from libtbx.utils import Sorry
 from mmtbx.geometry_restraints.torsion_restraints import utils, rotamer_search
-from mmtbx import ncs
-import mmtbx.utils
 from libtbx import Auto
-import time
 from libtbx.str_utils import line_breaker
 
 # Refactoring notes 11 May 2015
@@ -109,8 +105,8 @@ class torsion_ncs(object):
     self.filter_phi_psi_outliers = params.filter_phi_psi_outliers
     self.restrain_to_master_chain = params.restrain_to_master_chain
     self.fmodel = fmodel
-    self.ncs_groups_selection_string_list = self.ncs_obj.get_array_of_selections()
     self.ncs_restraints_group_list = self.ncs_obj.get_ncs_restraints_group_list()
+    self.ncs_groups_selection_string_list = self.ncs_restraints_group_list.get_array_of_str_selections()
     self.log = log
     self.params = params
     self.dp_ncs = None
@@ -155,7 +151,7 @@ class torsion_ncs(object):
           h_i = self.pdb_hierarchy.select(isel)
           h_j = self.pdb_hierarchy.select(jsel)
           # chain matching procedure
-          matching_chain_numbers = []
+          # matching_chain_numbers = []
           matching_chains = []
           for ii, i_chain in enumerate(h_i.chains()):
             for jj, j_chain in enumerate(h_j.chains()):
@@ -166,7 +162,7 @@ class torsion_ncs(object):
               if (i_chain.atoms_size() == j_chain.atoms_size()
                   # and i_chain.is_similar_hierarchy(j_chain)
                   and i_chain.as_sequence() == j_chain.as_sequence()):
-                matching_chain_numbers.append((ii, jj))
+                # matching_chain_numbers.append((ii, jj))
                 matching_chains.append((i_chain, j_chain))
                 break
           # residue matching

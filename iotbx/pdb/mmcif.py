@@ -110,7 +110,8 @@ class pdb_hierarchy_builder(crystal_symmetry_builder):
       current_auth_asym_id = auth_asym_id[i_atom]
       if current_auth_asym_id == ".": current_auth_asym_id = " "
       assert current_label_asym_id is not None
-      if current_label_asym_id != last_label_asym_id:
+      if (current_label_asym_id != last_label_asym_id
+          or current_model_id != last_model_id):
         chain = hierarchy.chain(id=current_auth_asym_id)
         model.append_chain(chain)
       else:
@@ -125,9 +126,10 @@ class pdb_hierarchy_builder(crystal_symmetry_builder):
       if pdb_ins_code is not None:
         current_ins_code = pdb_ins_code[i_atom]
         if current_ins_code in ("?", ".", None): current_ins_code = " "
-      if (current_residue_id != last_residue_id or
-          current_ins_code != last_ins_code or
-          current_label_asym_id != last_label_asym_id):
+      if (current_residue_id != last_residue_id
+          or current_ins_code != last_ins_code
+          or current_label_asym_id != last_label_asym_id
+          or current_model_id != last_model_id):
         try:
           resseq = hy36encode(width=4, value=int(current_residue_id))
         except ValueError, e:
@@ -141,7 +143,8 @@ class pdb_hierarchy_builder(crystal_symmetry_builder):
       # atom_group(s)
       # defined by resname and altloc id
       current_altloc = alt_id[i_atom]
-      if current_altloc == ".": current_altloc = "" # Main chain atoms
+      if current_altloc == "." or current_altloc == "?":
+        current_altloc = "" # Main chain atoms
       current_resname = comp_id[i_atom]
       if (current_altloc, current_resname) not in atom_groups:
         atom_group = hierarchy.atom_group(
@@ -393,14 +396,16 @@ class cif_input(iotbx.pdb.pdb_input_mixin):
     if len(self.cif_model) == 0:
       raise Sorry("mmCIF file must contain at least one data block")
     self.cif_block = self.cif_model.values()[0]
-    self.builder = pdb_hierarchy_builder(self.cif_block)
-    self.hierarchy = self.builder.hierarchy
     self._source_info = "file %s" %file_name
+    self.hierarchy = None
+    self.builder = None
 
   def file_type (self) :
     return "mmcif"
 
   def construct_hierarchy(self, set_atom_i_seq=True, sort_atoms=True):
+    self.builder = pdb_hierarchy_builder(self.cif_block)
+    self.hierarchy = self.builder.hierarchy
     if sort_atoms:
       self.hierarchy.sort_atoms_in_place()
       if (set_atom_i_seq) :
@@ -413,12 +418,18 @@ class cif_input(iotbx.pdb.pdb_input_mixin):
     return self._source_info
 
   def atoms(self):
+    if self.hierarchy is None:
+      self.construct_hierarchy()
     return self.hierarchy.atoms()
 
   def atoms_with_labels(self):
+    if self.hierarchy is None:
+      self.construct_hierarchy()
     return self.hierarchy.atoms_with_labels()
 
   def model_indices(self):
+    if self.hierarchy is None:
+      self.construct_hierarchy()
     return flex.size_t([m.atoms_size() for m in self.hierarchy.models()])
 
   def ter_indices(self):
@@ -428,6 +439,8 @@ class cif_input(iotbx.pdb.pdb_input_mixin):
   def crystal_symmetry(self,
                        crystal_symmetry=None,
                        weak_symmetry=False):
+    if self.hierarchy is None:
+      self.construct_hierarchy()
     self_symmetry = self.builder.crystal_symmetry
     if (crystal_symmetry is None):
       return self_symmetry
@@ -438,6 +451,8 @@ class cif_input(iotbx.pdb.pdb_input_mixin):
       force=not weak_symmetry)
 
   def crystal_symmetry_from_cryst1(self):
+    if self.hierarchy is None:
+      self.construct_hierarchy()
     return self.builder.crystal_symmetry
 
   def extract_cryst1_z_columns(self):
@@ -571,12 +586,14 @@ class cif_input(iotbx.pdb.pdb_input_mixin):
         t_trans.append(matrix.col(map(float,t)))
 
     # filter everything for X0 and P here:
+    # Why??? Nobody promised that id would be integer, it is a 'single word':
+    # http://mmcif.wwpdb.org/dictionaries/mmcif_pdbx_v50.dic/Items/_pdbx_struct_oper_list.id.html
     trans = []
     rots = []
     serial_number = []
     coordinates_present = []
     for sn, r, t, cp in zip(t_serial_number, t_rots, t_trans, t_coordinates_present):
-      if sn[0] != "P" and sn[0] != "X0":
+      if sn[0] != "P" and sn[0] != "X0" and sn[0] != "H":
         trans.append(t)
         rots.append(r)
         serial_number.append((sn[0], int(sn[0])-1 ))

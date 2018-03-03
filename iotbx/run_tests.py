@@ -91,16 +91,19 @@ tst_list = (
   "$D/regression/tst_export_scalepack_unmerged.py",
   ["$D/dsn6/tst.py", "P31"],
   "$D/regression/ncs/tst_mtrix_biomt_cmdl.py",
-  "$D/regression/ncs/tst_ncs.py",
   "$D/regression/ncs/tst_ncs_search_ligs.py",
   "$D/regression/ncs/tst_ncs_groups_preprocessing.py",
   "$D/regression/ncs/tst_ncs_input.py",
   "$D/regression/ncs/tst_ncs_user_selections.py",
+  "$D/regression/ncs/tst_ncs.py",
   "$D/pdb/tst_read_mtrix_records_from_cif.py",
   "$D/regression/tst_show_systematic_absences.py",
   "$D/regression/tst_miller_sort_asu.py",
   "$D/regression/tst_reflection_file_reader.py",
   "$D/regression/tst_xray_scale.py",
+  "$D/bioinformatics/test/tst_alignment_as_hsearch.py",
+  "$D/bioinformatics/test/tst_ebi_wu_blast_xml.py",
+  "$D/bioinformatics/test/tst_ncbi_blast_xml.py",
   )
 
 def run():

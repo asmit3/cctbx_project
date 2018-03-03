@@ -17,19 +17,21 @@ class TestMinimizationFunctions(unittest.TestCase):
     # No more NAGs in NCS selection
     # print sys._getframe().f_code.co_name
     pdb_inp = iotbx.pdb.input(lines=test_pdb_1,source_info=None)
-    ncs_inp = ncs.input(hierarchy=pdb_inp.construct_hierarchy(),
-        exclude_selection=None)
+    p = ncs.input.get_default_params()
+    p.ncs_search.exclude_selection=None
+    ncs_inp = ncs.input(
+        hierarchy=pdb_inp.construct_hierarchy(),
+        params=p.ncs_search)
     pdb_inp = iotbx.pdb.input(source_info=None, lines=test_pdb_1)
     ph = pdb_inp.construct_hierarchy()
     xrs =  pdb_inp.xray_structure_simple()
     #
     nrgl = ncs_inp.get_ncs_restraints_group_list()
-    asu_length = ncs_inp.total_asu_length
+    asu_length = ncs_inp.truncated_hierarchy.atoms_size()
     #
     refine_selection = nu.get_refine_selection(number_of_atoms=asu_length)
-    extended_ncs_selection =  nu.get_extended_ncs_selection(
-      ncs_restraints_group_list=nrgl,
-      refine_selection=refine_selection)
+    extended_ncs_selection = nrgl.get_extended_ncs_selection(
+        refine_selection=refine_selection)
     #
     self.assertEqual(asu_length, ph.atoms_size())
     self.assertEqual(asu_length, 18)

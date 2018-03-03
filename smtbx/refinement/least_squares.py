@@ -1,4 +1,4 @@
-from __future__ import division, absolute_import
+from __future__ import division, absolute_import, print_function
 import boost.python
 ext = boost.python.import_ext("smtbx_refinement_least_squares_ext")
 from smtbx_refinement_least_squares_ext import *
@@ -6,7 +6,6 @@ from smtbx_refinement_least_squares_ext import *
 
 import smtbx.refinement.weighting_schemes # import dependency
 from cctbx import xray
-import libtbx
 from libtbx import adopt_optional_init_args
 from scitbx import linalg
 from scitbx.lstbx import normal_eqns
@@ -45,13 +44,13 @@ class crystallographic_ls(
     self.taken_step = None
     self.restraints_normalisation_factor = None
 
-  class xray_structure(libtbx.property):
-    def fget(self):
-      return self.reparametrisation.structure
+  @property
+  def xray_structure(self):
+    return self.reparametrisation.structure
 
-  class twin_fractions(libtbx.property):
-    def fget(self):
-      return self.reparametrisation.twin_fractions
+  @property
+  def twin_fractions(self):
+    return self.reparametrisation.twin_fractions
 
   def build_up(self, objective_only=False):
     if self.f_mask is not None:

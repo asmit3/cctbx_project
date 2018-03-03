@@ -247,7 +247,7 @@ Parameters:"""%h
     print >>log,"\nOutput map will be within input map"
   if params.lower_bounds and params.upper_bounds:
     print >>log,"Bounds for cut out map are (%s,%s,%s) to (%s,%s,%s)" %(
-     tuple(list(lower_bounds)+list(upper_bounds)))
+     tuple(list(params.lower_bounds)+list(params.upper_bounds)))
 
   box = mmtbx.utils.extract_box_around_model_and_map(
     xray_structure   = xray_structure,
@@ -282,6 +282,30 @@ Parameters:"""%h
   ph_box.adopt_xray_structure(box.xray_structure_box)
 
   box.hierarchy=ph_box
+
+  if (inputs and inputs.crystal_symmetry and inputs.ccp4_map and
+    inputs.crystal_symmetry.unit_cell().parameters() and
+     inputs.ccp4_map.unit_cell_parameters  ) and (
+       inputs.crystal_symmetry.unit_cell().parameters() !=
+       inputs.ccp4_map.unit_cell_parameters):
+    print >>log,"\nNOTE: Mismatch of unit cell parameters from CCP4 map:"
+    print >>log,"Unit cell from CCP4 map 'unit cell parameters': "+\
+      "%.1f, %.1f, %.1f, %.1f, %.1f, %.1f)" %tuple(
+        inputs.ccp4_map.unit_cell_parameters)
+    print >>log,"Unit cell from CCP4 map 'map grid':             "+\
+      "%.1f, %.1f, %.1f, %.1f, %.1f, %.1f)" %tuple(
+       inputs.crystal_symmetry.unit_cell().parameters())
+    print >>log,"\nInterpreting this as the 'unit cell parameters' was "+\
+      "original map \ndimension and 'map grid' is the "+\
+      "portion actually in the map that was supplied here.\n"
+    box.unit_cell_parameters_from_ccp4_map=inputs.ccp4_map.unit_cell_parameters
+    box.unit_cell_parameters_deduced_from_map_grid=\
+       inputs.crystal_symmetry.unit_cell().parameters()
+
+  else:
+    box.unit_cell_parameters_from_ccp4_map=None
+    box.unit_cell_parameters_deduced_from_map_grid=None
+
   if not write_output_files:
     return box
 
@@ -297,7 +321,7 @@ Parameters:"""%h
     if(params.output_file_name_prefix is None):
       file_name = "%s_box.ccp4"%output_prefix
     else: file_name = "%s.ccp4"%params.output_file_name_prefix
-    print >> log, "writing map to CCP4 formatted file:   %s"%file_name
+    print >> log, "Writing map to CCP4 formatted file:   %s"%file_name
     box.write_ccp4_map(file_name=file_name)
   if("xplor" in params.output_format):
     if(params.output_file_name_prefix is None):
