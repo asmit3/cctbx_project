@@ -10,21 +10,15 @@ from construct_random_datapt import ExGauss
 
 class mcmc():
   def __init__(self):
-    self.gamma_mode = False
+    self.proposal_factor = 2.0
 
   def gauss_pdf(self,x,mu,sigma):
     return np.log(1./(np.sqrt(2.0*np.pi*sigma*sigma))) - (((x-mu)*(x-mu))/(2.0*sigma*sigma))
 
   def exgauss(self,data,mu, sigma, tau):
     sumofprob = 0.0
-    #  mu +=1e-15
-    #  sigma +=1e-15
-    #  tau +=1e-15
-#    import warnings
-#    warnings.simplefilter("error", RuntimeWarning)
     ct = 0
     for x in data:
-      #from IPython import embed; embed(); exit()
       if math.erfc((sigma*sigma-tau*(x-mu))/(sigma*tau*math.sqrt(2))) == 0.0 :
         return -np.inf 
       tmp_term= np.log(1./(2*tau))+((sigma*sigma-2.0*tau*(x-mu))/(2.0*tau*tau)) + np.log(math.erfc((sigma*sigma-tau*(x-mu))/(sigma*tau*math.sqrt(2))))
@@ -32,31 +26,22 @@ class mcmc():
     return sumofprob
 
   def gauss_cdf(self,x,mu,sigma):
-#    if sigma <= 0.0:
-#      return 0.0
-#    print 'GAUSS_CDF',0.5*(1+math.erf((x-mu)/(math.sqrt(2)*sigma))),sigma
     return 0.5*(1+math.erf((x-mu)/(math.sqrt(2)*sigma)))
 
   def exgauss_cdf_array(self,data,mu,sigma,tau):
     cdf = []
-#    print 'FROM EXGAUS_CDF',mu,sigma,tau
     for x in data:
       u = (x-mu)/tau
       v = sigma/tau
       if self.gauss_cdf(u,v*v,v) == 0.0:
         cdf.append(self.gauss_cdf(u,0,v))
       else:
-#        print 'uv radiation',u,v, (self.gauss_cdf(u,v*v,v)),self.gauss_cdf(u,0,v)
-#        if np.isinf(np.exp(-u+0.5*v*v)):
-##          from IPython import embed; embed(); exit()
         cdf.append(self.gauss_cdf(u,0,v)-np.exp(-u+0.5*v*v)*(self.gauss_cdf(u,v*v,v)))
     return flex.double(cdf)
 
   def exgauss_cdf(self,x, mu, sigma, tau):
     u = (x-mu)/tau
     v = sigma/tau
-#    print 'mu-sigma-tau = ',mu, sigma, tau
-#    print u,v,self.gauss_cdf(u,0,v), self.gauss_cdf(u,v*v,v)
     if self.gauss_cdf(u,v*v,v) == 0.0:
       return self.gauss_cdf(u,0,v)
     else:
@@ -65,22 +50,6 @@ class mcmc():
   def gamma_dist_pdf(self, x, k, theta):
     from scitbx.math import gamma_complete
     return (k-1)*np.log(x)-np.log(gamma_complete(k))-k*np.log(theta)-(x/theta)
-
-# FIXME
-  def initial_guess0(self, data, wiki_method=False):
-    gamma = (np.mean(data)-np.median(data))/np.std(data)
-    if (wiki_method):
-#      from IPython import embed; embed(); exit()
-      m = np.mean(data)
-      s = np.std(data)
-      mu = m-s*np.sign(gamma)*((np.abs(gamma)/2.)**(1./3))
-      sigma = np.sqrt(s*s*(1-((np.abs(gamma)/2.)**(2./3))))
-      tau = np.sign(gamma)*s*((np.abs(gamma)/2.)**1./3)
-    else:
-      mu = np.mean(data) - gamma #skewness(data)
-      tau = np.std(data)*0.8
-      sigma = np.sqrt(np.var(data)-tau*tau)
-    return [mu,sigma,tau]
 
   def sampler(self, data, samples=5, mu_init=0.5, sigma_init = 0.5,tau_init = 0.5, 
               proposal_width = 10.0,t_start=1, dt=1,cdf_cutoff=0.95, 
@@ -94,9 +63,11 @@ class mcmc():
     tau_current = tau_init
 #    print 'PRIOR ERROS from BOOTSTRAP TECHNIQUE= ',prior_errors
 #    dmu,dsigma,dtau = prior_errors 
-#    if len(data) < 4:
     dmu,dsigma,dtau = self.get_error_estimate_of_params(residual, data, mu_init, sigma_init, tau_init)
-#    from IPython import embed; embed(); exit()
+#    if np.abs(dmu) > 1e6 or np.abs(dsigma) > 1e6 or np.abs(dtau) > 1e6 or np.abs(dmu) < 1.0 or np.abs(dsigma) < 1.0 or np.abs(dtau) < 1.0:
+#      dmu,dsigma,dtau = prior_errors 
+#      print 'PRIOR ERROS from BOOTSTRAP TECHNIQUE= ',prior_errors
+    
     mu_prior_mu = mu_init
     mu_prior_sd = dmu #(np.abs(mu_alt-mu_init))/2000.
     sd_prior_mu = sigma_init
@@ -105,53 +76,25 @@ class mcmc():
     tau_prior_sd = dtau #np.abs(tau_alt-tau_init)/2000.
     accept_counter = 0
 #
+#    self.proposal_factor = self.find_optimal_proposal_factor()
     posterior = [[mu_current,sigma_current, tau_current]]
-
     I_mcmc = []
-    proposal_factor = 2.0
-#    print 'Starting likelihood, sd, and # of data pts = ', self.exgauss(data, mu_current, sigma_current, tau_current), mu_prior_sd, sd_prior_sd, tau_prior_sd, len(data)
     for i in range(samples):
       accept = False
       inf_flag = False
-#      print 'numstep = ',i
 # trial move
-      mu_proposal =  np.random.normal(mu_current,proposal_factor* mu_prior_sd/1.)
-      if self.gamma_mode:
-        sigma_k = ((sigma_current*sigma_current)/(proposal_factor*proposal_factor*sd_prior_sd*sd_prior_sd) )
-        sigma_theta = (proposal_factor*proposal_factor*sd_prior_sd*sd_prior_sd)/(sigma_current)
-        tau_k = ((tau_current*tau_current)/(proposal_factor*proposal_factor*tau_prior_sd*tau_prior_sd))
-        tau_theta = (proposal_factor*proposal_factor*tau_prior_sd*tau_prior_sd)/(tau_current)
-
-        sigma_proposal = np.random.gamma(sigma_k, sigma_theta)
-        tau_proposal = np.random.gamma(tau_k, tau_theta)
-#        print 'proposals',sigma_proposal,tau_proposal
-#        print 'kk',sigma_k,sigma_theta, tau_k, tau_theta
-      else:
-        sigma_proposal = np.abs(np.random.normal(sigma_current, proposal_factor*sd_prior_sd/1.)) #
-        tau_proposal = np.abs(np.random.normal(tau_current, proposal_factor*tau_prior_sd/1.))
+      mu_proposal =  np.random.normal(mu_current,self.proposal_factor* mu_prior_sd/1.)
+      sigma_proposal = np.abs(np.random.normal(sigma_current, self.proposal_factor*sd_prior_sd/1.)) #
+      tau_proposal = np.abs(np.random.normal(tau_current, self.proposal_factor*tau_prior_sd/1.))
 
       likelihood_current = self.exgauss(data,mu_current, sigma_current, tau_current) # multiply the probabilties
       likelihood_proposal = self.exgauss(data,mu_proposal,sigma_proposal, tau_proposal) # multiply
 
-      if self.gamma_mode:
-        sigma_k = (sd_prior_mu*sd_prior_mu)/(sd_prior_sd*sd_prior_sd)
-        sigma_theta = (sd_prior_sd*sd_prior_sd)/(sd_prior_mu)
-        tau_k = (tau_prior_mu*tau_prior_mu)/(tau_prior_sd*tau_prior_sd)
-        tau_theta = (tau_prior_sd*tau_prior_sd)/(tau_prior_mu)
-
-        prior_current = self.gauss_pdf(mu_current, mu_prior_mu, mu_prior_sd)+self.gamma_dist_pdf(sigma_current, sigma_k, sigma_theta)+ \
-                      self.gamma_dist_pdf(tau_current, tau_k, tau_theta)
-        prior_proposal = self.gauss_pdf(mu_proposal, mu_prior_mu, mu_prior_sd)+self.gamma_dist_pdf(sigma_proposal, sigma_k, sigma_theta)+ \
-                       self.gamma_dist_pdf(tau_proposal, tau_k, tau_theta)
-        print prior_current, prior_proposal, 'priors'
-
-      else:
-        prior_current = self.gauss_pdf(mu_current, mu_prior_mu, mu_prior_sd)+self.gauss_pdf(sigma_current, sd_prior_mu, sd_prior_sd)+ \
+      prior_current = self.gauss_pdf(mu_current, mu_prior_mu, mu_prior_sd)+self.gauss_pdf(sigma_current, sd_prior_mu, sd_prior_sd)+ \
                       self.gauss_pdf(tau_current, tau_prior_mu, tau_prior_sd)
-        prior_proposal = self.gauss_pdf(mu_proposal, mu_prior_mu, mu_prior_sd)+self.gauss_pdf(sigma_proposal, sd_prior_mu, sd_prior_sd)+ \
+      prior_proposal = self.gauss_pdf(mu_proposal, mu_prior_mu, mu_prior_sd)+self.gauss_pdf(sigma_proposal, sd_prior_mu, sd_prior_sd)+ \
                        self.gauss_pdf(tau_proposal, tau_prior_mu, tau_prior_sd)
-#               prior_proposal = np.log(norm(mu_prior_mu, mu_prior_sd).pdf(mu_proposal)*norm(sd_prior_mu, sd_prior_sd).pdf(sigma_proposal)*norm(tau_prior_mu, tau_prior_sd).pdf(tau_proposal)) #
-      #print 'DEBUG', likelihood_proposal, likelihood_current, prior_current,prior_proposal
+
       if likelihood_proposal == -np.inf:
         accept = False
         inf_flag = True
@@ -169,32 +112,18 @@ class mcmc():
         accept_counter +=1
       if i > t_start and i%dt == 0:
         EXG= ExGauss(10000, minI, maxI, mu_current,sigma_current,tau_current)
-        #from IPython import embed; embed(); exit()
-#        I_95_temp = np.random.normal(100000., 1000.)
         I_ideal_temp = EXG.find_x_from_iter(cdf_cutoff)
-#        print self.exgauss_cdf(I_ideal_temp, mu_current, sigma_current, tau_current) 
-#        N_terms = 1.0*(samples-t_start)/dt
-#        I_mcmc_avg += I_95_temp/(N_terms)
-#        I_mcmc_2avg += (I_95_temp*I_95_temp)/(N_terms)
-        
-#        if analyse_mcmc:
         I_mcmc.append(I_ideal_temp)
-        #I_mcmc.append(EXG.interpolate_x_value(cdf_cutoff))
         del(EXG)
         if analyse_mcmc:
           posterior.append([mu_current, sigma_current, tau_current])
-#    print 'final likelihood', self.exgauss(data, posterior[-1][0], posterior[-1][1], posterior[-1][2])
-#    print 'accept rate = %4.3f, mu_prior_sd = %12.3f, sd_prior_sd= %12.3f, tau_prior_sd= %12.3f len(d) = %6d'%(accept_counter*1.0/samples, mu_prior_sd, sd_prior_sd, tau_prior_sd, len(data)) 
-#    return np.random.normal(1000., 10.), np.random.normal(100., 5.)
     print 'acceptance rate',accept_counter*1.0/samples
     I_mcmc_avg =  np.mean(I_mcmc)
     I_mcmc_var =  np.var(I_mcmc)
-#!!    I_mcmc_var =  I_mcmc_2avg - I_mcmc_avg*I_mcmc_avg #np.var(I_mcmc)
     if analyse_mcmc:
       self.mcmc_statistics(posterior,I_mcmc,data, cdf_cutoff)
     del(I_mcmc)
     return I_mcmc_avg, I_mcmc_var, accept_counter*1.0/samples
-#    return posterior
 
   def mcmc_statistics(self, posterior, I_mcmc, data, cdf_cutoff):
     ''' Get statistics from the ensemble of curves generated using MCMC
@@ -316,12 +245,10 @@ class mcmc():
     if mu2grad != 0.:
       dmu = np.sqrt(1.0*residual/mu2grad/1.)
     if sigma2grad != 0.:
-#      if not self.gamma_mode:
       dsigma = min(dsigma, np.sqrt(1.0*residual/sigma2grad/1.))
 #      else:
 #        dsigma = np.sqrt(residual/sigma2grad)
     if tau2grad != 0.:
-#      if not self.gamma_mode:
       dtau = min(dtau,np.sqrt(1.0*residual/tau2grad/1.))
 #      else:
 #        dtau = np.sqrt(residual/tau2grad)
