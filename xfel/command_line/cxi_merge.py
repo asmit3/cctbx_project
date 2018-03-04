@@ -1064,7 +1064,7 @@ class scaling_manager (intensity_data) :
                                    nsteps=20000, t_start=2000, dt=10, plot=False)
         I_avg_ideal, I_var_ideal, accept_rate = mcmc_helper.run()
         summed_wt_I = (I_avg_ideal/I_var_ideal)
-        summed_weight = 1./I_var_ideal
+        summed_weight = 1.0/I_var_ideal
 ##        thinned_params = mcmc_helper.run()
 #        import pdb; pdb.set_trace()
         print 'accept rate for hkl value=',hkl, accept_rate, hkl_id

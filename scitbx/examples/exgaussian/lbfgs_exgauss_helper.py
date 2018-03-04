@@ -123,7 +123,7 @@ class lbfgs_exgauss ():
   def compute_functional_and_gradients(self):
     self.a = self.x
     f,g = self.target_func_and_grad()
-    self.print_step("LBFGS EXGAUSS stp",f)
+#    self.print_step("LBFGS EXGAUSS stp",f)
     return f, g
 
   def curvatures(self):

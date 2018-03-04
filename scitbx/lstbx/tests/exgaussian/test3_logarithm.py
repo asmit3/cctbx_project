@@ -56,8 +56,6 @@ class mcmc():
               plot=False,analyse_mcmc = False,seed=22, residual = 0.0, prior_errors = [1., 1., 1.]):
     np.random.seed(seed) # was with seedhere
     data = np.sort(data)
-    maxI = np.max(data) #+np.max(data)/2.
-    minI = np.min(data) #-np.min(data)/2.
     mu_current = mu_init
     sigma_current = sigma_init
     tau_current = tau_init
@@ -68,32 +66,67 @@ class mcmc():
 #      dmu,dsigma,dtau = prior_errors 
 #      print 'PRIOR ERROS from BOOTSTRAP TECHNIQUE= ',prior_errors
     
-    mu_prior_mu = mu_init
-    mu_prior_sd = dmu #(np.abs(mu_alt-mu_init))/2000.
-    sd_prior_mu = sigma_init
-    sd_prior_sd = dsigma #(np.abs(sigma_alt-sigma_init))/2000.
-    tau_prior_mu = tau_init
-    tau_prior_sd = dtau #np.abs(tau_alt-tau_init)/2000.
+    self.mu_prior_mu = mu_init
+    self.mu_prior_sd = dmu 
+    self.sd_prior_mu = sigma_init
+    self.sd_prior_sd = dsigma 
+    self.tau_prior_mu = tau_init
+    self.tau_prior_sd = dtau 
+    self.proposal_factor = self.find_optimal_proposal_factor(data, mu_current, sigma_current, tau_current, cdf_cutoff)
+    
+    I_mcmc_avg, I_mcmc_var, acceptance_rate = self.run_sampler(samples,data, t_start,dt,mu_current, sigma_current, tau_current, 
+                                                               cdf_cutoff, analyse_mcmc=analyse_mcmc, exploratory_run=False)
+    attempt_alternate_prior_errors = False
+    if acceptance_rate < 0.001 and attempt_alternate_prior_errors:
+      dmu,dsigma,dtau = prior_errors 
+      print 'PRIOR ERROS from BOOTSTRAP TECHNIQUE= ',prior_errors
+      self.mu_prior_sd = dmu
+      self.sd_prior_sd = dsigma
+      self.tau_prior_sd = dtau
+      self.proposal_factor = self.find_optimal_proposal_factor(data, mu_current, sigma_current, tau_current, cdf_cutoff)
+      I_mcmc_avg, I_mcmc_var, acceptance_rate = self.run_sampler(samples,data, t_start,dt,mu_current, sigma_current, tau_current,
+                                                               cdf_cutoff, analyse_mcmc=analyse_mcmc, exploratory_run=False)
+    print 'PROPOSAL_FACTOR ', self.proposal_factor 
+    print 'acceptance rate',acceptance_rate
+    return I_mcmc_avg, I_mcmc_var, acceptance_rate
+
+
+  def find_optimal_proposal_factor(self, data, mu_current, sigma_current, tau_current, cdf_cutoff):
+    return self.proposal_factor
+    proposal_factors = [0.01, 0.1, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.3, 3.0, 5.0, 10.0]
+    critical_acceptance_rate = 0.2345
+    samples = 500
+    t_start = 100
+    dt = 10
+    acceptance_rates_info = []
+    for proposal_factor in proposal_factors:
+      self.proposal_factor = proposal_factor
+      I_mcmc_avg, I_mcmc_var, acceptance_rate = self.run_sampler(samples,data, t_start,dt,mu_current, sigma_current, tau_current, 
+                                                               cdf_cutoff, analyse_mcmc=False, exploratory_run=False)
+      acceptance_rates_info.append(np.abs(acceptance_rate-critical_acceptance_rate))
+    return proposal_factors[acceptance_rates_info.index(min(acceptance_rates_info))]
+
+  def run_sampler(self, samples, data, t_start, dt, mu_current,sigma_current, tau_current, cdf_cutoff,analyse_mcmc=False, exploratory_run=False):
+    maxI = np.max(data) #+np.max(data)/2.
+    minI = np.min(data) #-np.min(data)/2.
     accept_counter = 0
-#
-#    self.proposal_factor = self.find_optimal_proposal_factor()
     posterior = [[mu_current,sigma_current, tau_current]]
     I_mcmc = []
     for i in range(samples):
       accept = False
       inf_flag = False
 # trial move
-      mu_proposal =  np.random.normal(mu_current,self.proposal_factor* mu_prior_sd/1.)
-      sigma_proposal = np.abs(np.random.normal(sigma_current, self.proposal_factor*sd_prior_sd/1.)) #
-      tau_proposal = np.abs(np.random.normal(tau_current, self.proposal_factor*tau_prior_sd/1.))
+      mu_proposal =  np.random.normal(mu_current,self.proposal_factor* self.mu_prior_sd)
+      sigma_proposal = np.abs(np.random.normal(sigma_current, self.proposal_factor*self.sd_prior_sd)) #
+      tau_proposal = np.abs(np.random.normal(tau_current, self.proposal_factor*self.tau_prior_sd))
 
       likelihood_current = self.exgauss(data,mu_current, sigma_current, tau_current) # multiply the probabilties
       likelihood_proposal = self.exgauss(data,mu_proposal,sigma_proposal, tau_proposal) # multiply
 
-      prior_current = self.gauss_pdf(mu_current, mu_prior_mu, mu_prior_sd)+self.gauss_pdf(sigma_current, sd_prior_mu, sd_prior_sd)+ \
-                      self.gauss_pdf(tau_current, tau_prior_mu, tau_prior_sd)
-      prior_proposal = self.gauss_pdf(mu_proposal, mu_prior_mu, mu_prior_sd)+self.gauss_pdf(sigma_proposal, sd_prior_mu, sd_prior_sd)+ \
-                       self.gauss_pdf(tau_proposal, tau_prior_mu, tau_prior_sd)
+      prior_current = self.gauss_pdf(mu_current, self.mu_prior_mu, self.mu_prior_sd)+self.gauss_pdf(sigma_current, self.sd_prior_mu, self.sd_prior_sd)+ \
+                      self.gauss_pdf(tau_current, self.tau_prior_mu, self.tau_prior_sd)
+      prior_proposal = self.gauss_pdf(mu_proposal, self.mu_prior_mu, self.mu_prior_sd)+self.gauss_pdf(sigma_proposal, self.sd_prior_mu, self.sd_prior_sd)+ \
+                       self.gauss_pdf(tau_proposal, self.tau_prior_mu, self.tau_prior_sd)
 
       if likelihood_proposal == -np.inf:
         accept = False
@@ -103,8 +136,6 @@ class mcmc():
         p_proposal = likelihood_proposal + prior_proposal
         p_accept = p_proposal- p_current
         accept = np.log(np.random.rand()) < p_accept
-      if plot:
-        plot_proposal(mu_current, mu_proposal, mu_prior_mu, mu_prior_sd, data, accept, posterior, i)
       if accept:
         mu_current = mu_proposal
         sigma_current = sigma_proposal
@@ -117,7 +148,7 @@ class mcmc():
         del(EXG)
         if analyse_mcmc:
           posterior.append([mu_current, sigma_current, tau_current])
-    print 'acceptance rate',accept_counter*1.0/samples
+#    print 'acceptance rate',accept_counter*1.0/samples
     I_mcmc_avg =  np.mean(I_mcmc)
     I_mcmc_var =  np.var(I_mcmc)
     if analyse_mcmc:
@@ -243,15 +274,15 @@ class mcmc():
     assert tau0 > 0., "Initial tau from minimization is negative, can't assign priors"
     dmu,dsigma,dtau=np.abs(mu0),sigma0,tau0 # error ~ O(value of params) as first guess
     if mu2grad != 0.:
-      dmu = np.sqrt(1.0*residual/mu2grad/1.)
+      dmu = np.sqrt(1.0*residual/mu2grad)
     if sigma2grad != 0.:
       dsigma = min(dsigma, np.sqrt(1.0*residual/sigma2grad/1.))
 #      else:
-#        dsigma = np.sqrt(residual/sigma2grad)
+#      dsigma = np.sqrt(1.0*residual/sigma2grad)
     if tau2grad != 0.:
       dtau = min(dtau,np.sqrt(1.0*residual/tau2grad/1.))
 #      else:
-#        dtau = np.sqrt(residual/tau2grad)
+#      dtau = np.sqrt(1.0*residual/tau2grad)
 
     print 'my errors = ',dmu,dsigma,dtau
     return dmu,dsigma,dtau

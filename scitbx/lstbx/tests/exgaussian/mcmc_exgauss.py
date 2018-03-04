@@ -44,7 +44,7 @@ class exgauss_fit(
     self.n_data = len(self.t)
     self.restart()
     # Get an initial estimate of the errors on the parameters using LBFGS
-    self.bootstrap_errors = [1.0, 1.0, 1.0] #self.error_estimate_by_bootstrap() 
+    self.bootstrap_errors = self.error_estimate_by_bootstrap() 
 
   def choose_random_datapts(self, dropout_fraction=0.2):
     sample_size = int(len(self.t)*(1-dropout_fraction))
@@ -57,7 +57,7 @@ class exgauss_fit(
     if len(self.t) < 4:
       print 'Too small a sample size to get a reliable error estimate by bootstrap'
       return [1.0, 1.0, 1.0]
-    Ntrials = 10
+    Ntrials = min(len(self.t), 20)
     params = []
     for trial in range(Ntrials):
       t_subset,y_subset = self.choose_random_datapts()
